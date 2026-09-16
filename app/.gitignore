@@ -1,0 +1,10 @@
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Platform scaffolding is generated fresh by CI (flutter create --platforms=android)
+# rather than committed — see AGENTS.md for why.
+android/
+ios/
