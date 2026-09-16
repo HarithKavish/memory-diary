@@ -96,9 +96,23 @@ export default {
       // swallows uncaught detail otherwise - `wrangler tail` only shows an explicit
       // console.error, not the exception object itself.
       console.error("request failed:", err);
+      // MongoServerSelectionError carries the real per-server reason in
+      // `.reason.servers` (a Map), not `.cause` - that's what actually explains a
+      // connection failure like this one.
+      const e = err as {
+        message?: string;
+        name?: string;
+        reason?: { servers?: Map<string, { type?: string; error?: { message?: string; code?: unknown } }> };
+      };
+      const serverErrors: Record<string, string> = {};
+      if (e?.reason?.servers) {
+        for (const [addr, desc] of e.reason.servers) {
+          serverErrors[addr] = `type=${desc?.type ?? "?"} error=${desc?.error?.message ?? "none"} code=${String(desc?.error?.code ?? "")}`;
+        }
+      }
       const detail =
         err instanceof Error
-          ? { message: err.message, name: err.name, cause: String((err as { cause?: unknown }).cause ?? "") }
+          ? { message: e.message, name: e.name, serverErrors }
           : { message: "internal error" };
       return json({ error: detail }, 500);
     }
