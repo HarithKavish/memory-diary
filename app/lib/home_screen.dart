@@ -161,8 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   controller: _searchController,
                   decoration: const InputDecoration(
                     labelText: 'Search your facts',
-                    prefixIcon: const Icon(Icons.search),
-                    border: const OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
                   ),
                   onSubmitted: (q) => _refresh(query: q),
                 ),
