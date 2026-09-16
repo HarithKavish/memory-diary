@@ -12,8 +12,10 @@ export interface Env {
 /** The tenant this app owns inside the shared `talk.memories` collection. */
 export const TENANT_ID = "harith";
 
+// No `_id` field here deliberately - the mongodb driver adds it automatically as
+// ObjectId via WithId<MemoryDoc> on anything read back, and OptionalId<MemoryDoc> on
+// insert. Declaring our own `_id` here fights that inference instead of using it.
 export interface MemoryDoc {
-  _id?: string;
   userId: string;
   topic: string;
   summary: string;
