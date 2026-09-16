@@ -52,12 +52,21 @@ npx wrangler dev
 
 ## Connection pattern
 
-Direct-connect-per-isolate (`src/db.ts`), module-scoped client reused across warm
-invocations — the simplest pattern that Cloudflare's own MongoDB integration guide
-documents. For a single-user app this is enough. If latency from cold connects ever
-becomes a problem, the next step is Cloudflare's Durable-Object-backed connection pool
-(one persistent Mongo connection per DO instance) — see Cloudflare's Workers + MongoDB
-docs for that pattern; not needed here yet.
+A fresh `MongoClient` per request (`src/db.ts`) — no caching/reuse across requests.
+**This was not the first version.** An earlier version cached the client in a
+module-scoped variable to reuse across warm invocations, which broke silently in
+production: Cloudflare's docs are explicit that TCP sockets "cannot be created in
+global scope and shared across requests." A socket surviving from a prior request gets
+torn down by the runtime, and the driver reusing that dead reference produces no error
+at all - just a hang until `serverSelectionTimeoutMS` fires. Diagnosed live via
+`wrangler tail --format json` plus logging `err.reason.servers` (a
+`MongoServerSelectionError`'s real per-server detail, not `.cause`), which showed every
+shard member stuck at `type=Unknown, error=none` - a connect that never resolves and
+never errors, not a rejection.
+
+If per-request connect latency becomes a real problem, the correct fix is a
+Durable-Object-backed connection pool (one persistent Mongo connection per DO
+instance, which Cloudflare's own docs also cover) - not a module-scoped cache.
 
 ## Deployment
 

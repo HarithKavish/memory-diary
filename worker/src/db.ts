@@ -14,21 +14,16 @@ import { TENANT_ID } from "./types";
 const VECTOR_INDEX_NAME = "vector_index_user";
 const EMBEDDING_FIELD = "embedding";
 
-// Reused across warm invocations of the same Worker isolate; reconnects on a cold start
-// or after an error. No Durable Object — this is a single-user, low-traffic app, so the
-// simpler per-isolate client is enough; see README for the DO-based pattern if that ever
-// needs to change.
-let cachedClient: MongoClient | null = null;
-
+// A fresh client per request, matching Cloudflare's own MongoDB integration example.
+// An earlier version cached the client across requests via a module-scoped variable -
+// that breaks, silently: Cloudflare's docs are explicit that "TCP sockets cannot be
+// created in global scope and shared across requests." A socket surviving from a prior
+// request gets torn down by the runtime, and the driver reusing that dead reference
+// produces no error at all - just a hang until serverSelectionTimeoutMS fires (this is
+// exactly what a live "type=Unknown, error=none" per-server timeout turned out to be).
+// A Durable-Object-backed connection pool is the correct way to get reuse back, if
+// per-request connect latency ever becomes a real problem - see README.
 async function getClient(env: Env): Promise<MongoClient> {
-  if (cachedClient) {
-    try {
-      await cachedClient.db("admin").command({ ping: 1 });
-      return cachedClient;
-    } catch {
-      cachedClient = null;
-    }
-  }
   const client = new MongoClient(env.MONGODB_ATLAS_URI, {
     maxPoolSize: 1,
     minPoolSize: 0,
@@ -36,7 +31,6 @@ async function getClient(env: Env): Promise<MongoClient> {
     maxIdleTimeMS: 20_000,
   });
   await client.connect();
-  cachedClient = client;
   return client;
 }
 
