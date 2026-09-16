@@ -92,7 +92,15 @@ export default {
 
       return json({ error: "not found" }, 404);
     } catch (err) {
-      return json({ error: err instanceof Error ? err.message : "internal error" }, 500);
+      // Logged in full (network/protocol detail only, no credentials) because Workers
+      // swallows uncaught detail otherwise - `wrangler tail` only shows an explicit
+      // console.error, not the exception object itself.
+      console.error("request failed:", err);
+      const detail =
+        err instanceof Error
+          ? { message: err.message, name: err.name, cause: String((err as { cause?: unknown }).cause ?? "") }
+          : { message: "internal error" };
+      return json({ error: detail }, 500);
     }
   },
 } satisfies ExportedHandler<Env>;
