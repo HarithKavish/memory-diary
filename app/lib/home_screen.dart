@@ -112,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await widget.api.logout();
-              if (!mounted) return;
+              if (!context.mounted) return;
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (_) => LoginScreen(api: widget.api)),
               );
@@ -159,7 +159,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _searchController,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'Search your facts',
                     prefixIcon: const Icon(Icons.search),
                     border: const OutlineInputBorder(),
