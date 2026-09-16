@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local `wrangler dev` (gitignored, never commit real values).
+MONGODB_ATLAS_URI=
+MONGODB_DB=talk
+MONGODB_COLLECTION=memories
+LLM_API_KEY=
+LLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+JWT_SIGNING_KEY=
+OWNER_PASSPHRASE=

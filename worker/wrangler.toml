@@ -1,0 +1,17 @@
+name = "memory-diary-worker"
+main = "src/index.ts"
+compatibility_date = "2026-09-16"
+compatibility_flags = ["nodejs_compat"]
+
+[ai]
+binding = "AI"
+
+# Secrets (never set here — pushed via `wrangler secret put <NAME>` or
+# `secretctl push -Target wrangler:memory-diary-worker`):
+#   MONGODB_ATLAS_URI    connection string for the shared Atlas cluster
+#   MONGODB_DB           database name (matches Jarvis's HERMES_ATLAS_DB)
+#   MONGODB_COLLECTION   collection name (matches Jarvis's HERMES_ATLAS_COLLECTION, "memories")
+#   LLM_API_KEY          NVIDIA API key (reused from the Jarvis VM)
+#   LLM_MODEL            e.g. "nvidia/nemotron-3-super-120b-a12b"
+#   JWT_SIGNING_KEY       random secret used to sign session tokens
+#   OWNER_PASSPHRASE      the passphrase the app's login screen checks against
