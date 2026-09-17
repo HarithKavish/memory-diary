@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'home_screen.dart';
+import 'main.dart' show apiBaseUrl;
 
 class LoginScreen extends StatefulWidget {
   final ApiClient api;
@@ -26,8 +27,17 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => HomeScreen(api: widget.api)),
       );
+    } on ApiException catch (e) {
+      // login() only throws ApiException for a real HTTP response from the server
+      // (e.g. 401 for a wrong passphrase) - so this really is a passphrase problem.
+      setState(() => _error = 'Could not log in — check the passphrase. ($e)');
     } catch (e) {
-      setState(() => _error = 'Could not log in — check the passphrase.');
+      // Anything else (can't resolve host, connection refused, timeout, ...) means
+      // the app never reached the server at all - almost never actually the
+      // passphrase, usually a misconfigured API_BASE_URL. Say so, and show what URL
+      // this build is actually pointed at, since that's compiled in at build time
+      // and easy to get wrong (e.g. an unset --dart-define leaves it empty).
+      setState(() => _error = "Couldn't reach the server at $apiBaseUrl — $e");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
