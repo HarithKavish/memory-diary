@@ -26,8 +26,22 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => HomeScreen(api: widget.api)),
       );
+    } on ApiException catch (e) {
+      // Only a real 401 from the server means the passphrase itself was wrong - any
+      // other status (e.g. a 500 from a Mongo/JWT-signing outage) is a server
+      // problem, not something the user can fix by re-typing the passphrase.
+      setState(() {
+        _error = e.statusCode == 401
+            ? 'Could not log in — check the passphrase.'
+            : 'Server error while logging in ($e). Not a passphrase problem - try again shortly.';
+      });
     } catch (e) {
-      setState(() => _error = 'Could not log in — check the passphrase.');
+      // Anything that isn't an ApiException never got a response at all (can't
+      // resolve host, connection refused, timeout, ...) - almost never actually the
+      // passphrase, usually a misconfigured API_BASE_URL. Show the URL this
+      // specific ApiClient instance is actually using (not main.dart's compile-time
+      // constant, which can differ - e.g. in tests).
+      setState(() => _error = "Couldn't reach the server at ${widget.api.baseUrl} — $e");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
