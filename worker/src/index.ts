@@ -1,3 +1,4 @@
+import { MongoClient } from "mongodb";
 import type { Env } from "./types";
 import { checkPassphrase, issueSessionToken, requireAuth } from "./auth";
 import { deleteFact, insertFact, listRecent, searchSimilar, updateFact } from "./db";
@@ -47,6 +48,23 @@ export default {
           });
         } catch (e) {
           return json({ ok: false, ms: Date.now() - start, error: e instanceof Error ? e.message : String(e) }, 500);
+        }
+      }
+
+      // TEMPORARY - bare-minimum MongoClient with zero custom options, to test
+      // whether maxPoolSize/serverSelectionTimeoutMS/etc are what's actually breaking
+      // the connection (a known-working public example uses no options at all).
+      if (pathname === "/debug/mongo-minimal") {
+        const start = Date.now();
+        const client = new MongoClient(env.MONGODB_ATLAS_URI);
+        try {
+          await client.connect();
+          const result = await client.db("admin").command({ ping: 1 });
+          return json({ ok: true, ms: Date.now() - start, result });
+        } catch (e) {
+          return json({ ok: false, ms: Date.now() - start, error: e instanceof Error ? e.message : String(e) }, 500);
+        } finally {
+          await client.close().catch(() => {});
         }
       }
 
