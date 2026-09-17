@@ -15,14 +15,11 @@ systems can read as the canonical profile, as opposed to any agent's own derived
 **Every query and mutation in `src/db.ts` filters or matches on `userId: "harith"`.** It
 never reads, searches, or writes another tenant's documents.
 
-**Before the first real write**, confirm two things live (this could not be confirmed from
-the session that built this — Atlas MCP access is disabled for the account, and the
-VM-side `atlas_memory.py` needs its `.env` properly sourced to connect):
-- the search index name really is `vector_index_user` (`src/db.ts`, `VECTOR_INDEX_NAME`)
-- the embedded vector field is really named `embedding` (`src/db.ts`, `EMBEDDING_FIELD`)
-
-If either differs, update the constants in `src/db.ts` — a dimension or path mismatch fails
-silently with garbage results, not an error.
+**Verified live 2026-09-17**: `VECTOR_INDEX_NAME = "vector_index_user"` and
+`EMBEDDING_FIELD = "embedding"` in `src/db.ts` are correct — confirmed end-to-end with a
+real create → vector-search-based correction → delete cycle against the live cluster
+(the "update" path only works at all if the index/field names are right, since it
+depends on `$vectorSearch` finding the prior entry).
 
 ## Endpoints
 
@@ -50,21 +47,33 @@ cp .dev.vars.example .dev.vars   # fill in real values, never commit this file
 npx wrangler dev
 ```
 
-## Connection pattern
+## Connection pattern, and the wrangler-version trap that broke it
 
-A fresh `MongoClient` per request (`src/db.ts`) — no caching/reuse across requests.
-**This was not the first version.** An earlier version cached the client in a
-module-scoped variable to reuse across warm invocations, which broke silently in
-production: Cloudflare's docs are explicit that TCP sockets "cannot be created in
-global scope and shared across requests." A socket surviving from a prior request gets
-torn down by the runtime, and the driver reusing that dead reference produces no error
-at all - just a hang until `serverSelectionTimeoutMS` fires. Diagnosed live via
-`wrangler tail --format json` plus logging `err.reason.servers` (a
-`MongoServerSelectionError`'s real per-server detail, not `.cause`), which showed every
-shard member stuck at `type=Unknown, error=none` - a connect that never resolves and
-never errors, not a rejection.
+A fresh `MongoClient` per request (`src/db.ts`) — no caching/reuse across requests
+(Cloudflare's docs are explicit that TCP sockets "cannot be created in global scope and
+shared across requests," so this is correct regardless of the story below).
 
-If per-request connect latency becomes a real problem, the correct fix is a
+**The actual root cause of a first-deploy failure, for the record**, because it cost a
+long debugging session and is easy to reintroduce: **`wrangler` must be on v4
+(`^4.4.0`+), not v3.** With `wrangler@3.114.17`, every request hung for exactly
+`serverSelectionTimeoutMS` with `MongoServerSelectionError` and every shard member stuck
+at `type=Unknown, error=none` — not a rejection, a connect that never resolves and never
+errors. Ruled out, in order, with live evidence at each step: Atlas Network Access
+(`0.0.0.0/0` was already set), cluster health (not paused), module-scoped client caching
+(removed it, no change), `nodejs_compat_v2` vs `nodejs_compat` (no change),
+`compatibility_date` (matched a known-working public reference exactly, no change),
+`mongodb` driver version pinned to that same reference's `6.15.0` (no change). What
+*did* change it: a raw `cloudflare:sockets` `connect()` with `secureTransport: "on"` to
+the identical Atlas host:port succeeded in under 500ms even while the driver hung,
+proving the network/TLS path itself was fine and the driver's own socket handling
+wasn't. The one remaining difference from the known-working reference was its
+`wrangler` major version (`^4.4.0` vs this repo's original `^3.90.0`) — bumping it
+fixed the connection immediately. Wrangler 3's bundler evidently produces a broken
+`node:tls`/`unenv` shim for the driver's TLS-socket-upgrade pattern specifically; v4's
+does not. (Bumping wrangler also raises its Node requirement to >= 22 — see
+`.github/workflows/deploy-worker.yml`'s `setup-node` step.)
+
+If per-request connect latency becomes a real problem, the next step is a
 Durable-Object-backed connection pool (one persistent Mongo connection per DO
 instance, which Cloudflare's own docs also cover) - not a module-scoped cache.
 
