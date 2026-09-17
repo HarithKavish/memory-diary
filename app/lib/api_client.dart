@@ -28,7 +28,10 @@ class Entry {
 
 class ApiException implements Exception {
   final String message;
-  ApiException(this.message);
+  /// The HTTP status code that caused this, when it came from a real server
+  /// response - null for anything that never got that far (e.g. "not logged in").
+  final int? statusCode;
+  ApiException(this.message, {this.statusCode});
   @override
   String toString() => message;
 }
@@ -49,7 +52,7 @@ class ApiClient {
       body: jsonEncode({'passphrase': passphrase}),
     );
     if (res.statusCode != 200) {
-      throw ApiException('login failed (${res.statusCode})');
+      throw ApiException('login failed (${res.statusCode})', statusCode: res.statusCode);
     }
     final token = jsonDecode(res.body)['token'] as String;
     await _storage.write(key: _tokenKey, value: token);
