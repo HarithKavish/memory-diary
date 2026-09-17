@@ -17,6 +17,39 @@ export default {
     const { pathname } = url;
 
     try {
+      // TEMPORARY diagnostic route - isolates whether raw outbound TCP sockets work at
+      // all from this Worker/account, independent of the mongodb driver. Remove once
+      // the Mongo connection issue is resolved.
+      if (pathname === "/debug/tcp") {
+        const { connect } = await import("cloudflare:sockets");
+        const target = url.searchParams.get("host") ?? "www.google.com";
+        const port = Number(url.searchParams.get("port") ?? "443");
+        const start = Date.now();
+        try {
+          const socket = connect({ hostname: target, port }, { secureTransport: "on", allowHalfOpen: false });
+          await Promise.race([
+            socket.opened,
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000)),
+          ]);
+          const writer = socket.writable.getWriter();
+          await writer.write(new TextEncoder().encode("HEAD / HTTP/1.0\r\n\r\n"));
+          await writer.close();
+          const reader = socket.readable.getReader();
+          const { value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("read timeout")), 4000)),
+          ]);
+          await socket.close();
+          return json({
+            ok: true,
+            ms: Date.now() - start,
+            firstBytes: value ? new TextDecoder().decode(value).slice(0, 80) : null,
+          });
+        } catch (e) {
+          return json({ ok: false, ms: Date.now() - start, error: e instanceof Error ? e.message : String(e) }, 500);
+        }
+      }
+
       if (pathname === "/auth/login" && request.method === "POST") {
         const { passphrase } = (await request.json()) as { passphrase?: string };
         if (!passphrase || !checkPassphrase(passphrase, env)) {
