@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_client.dart';
 import 'home_screen.dart';
-import 'main.dart' show apiBaseUrl;
 
 class LoginScreen extends StatefulWidget {
   final ApiClient api;
@@ -28,16 +27,21 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => HomeScreen(api: widget.api)),
       );
     } on ApiException catch (e) {
-      // login() only throws ApiException for a real HTTP response from the server
-      // (e.g. 401 for a wrong passphrase) - so this really is a passphrase problem.
-      setState(() => _error = 'Could not log in — check the passphrase. ($e)');
+      // Only a real 401 from the server means the passphrase itself was wrong - any
+      // other status (e.g. a 500 from a Mongo/JWT-signing outage) is a server
+      // problem, not something the user can fix by re-typing the passphrase.
+      setState(() {
+        _error = e.statusCode == 401
+            ? 'Could not log in — check the passphrase.'
+            : 'Server error while logging in ($e). Not a passphrase problem - try again shortly.';
+      });
     } catch (e) {
-      // Anything else (can't resolve host, connection refused, timeout, ...) means
-      // the app never reached the server at all - almost never actually the
-      // passphrase, usually a misconfigured API_BASE_URL. Say so, and show what URL
-      // this build is actually pointed at, since that's compiled in at build time
-      // and easy to get wrong (e.g. an unset --dart-define leaves it empty).
-      setState(() => _error = "Couldn't reach the server at $apiBaseUrl — $e");
+      // Anything that isn't an ApiException never got a response at all (can't
+      // resolve host, connection refused, timeout, ...) - almost never actually the
+      // passphrase, usually a misconfigured API_BASE_URL. Show the URL this
+      // specific ApiClient instance is actually using (not main.dart's compile-time
+      // constant, which can differ - e.g. in tests).
+      setState(() => _error = "Couldn't reach the server at ${widget.api.baseUrl} — $e");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
