@@ -12,6 +12,9 @@ on:
     paths:
       - "app/**"
 
+permissions:
+  contents: write # needed for `gh release create` on a tag push
+
 jobs:
   build:
     runs-on: ubuntu-latest
