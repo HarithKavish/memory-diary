@@ -42,8 +42,12 @@ canonical, human-authored profile section, distinct from any agent's own derived
 - The Mongo tenant this repo owns is `userId: "harith"` in `talk.memories`. Never write to,
   filter out, or otherwise touch `$~jarvis` or any other tenant's documents — see
   `worker/README.md` for the shared-collection convention this depends on.
-- No disk-space-heavy local tooling (`npm install`, `flutter create`) has been run or
-  verified locally in this repository's early history — the development machine was out of
-  disk space at the time. Treat CI (`build-apk.yml` / `deploy-worker.yml` runs) as the
-  first real build verification until told otherwise; do not assume local commands here
-  have been tested.
+- `worker/` has been verified locally (`npm install`, `npm run typecheck`, `wrangler deploy
+  --dry-run`) once the development machine had disk space again, and the deployed Worker
+  has been exercised end-to-end (login, create, natural-language correction, delete)
+  against the real Atlas cluster — see `worker/README.md` for the wrangler-version trap
+  that caused the first deploy to silently hang on every Mongo connection.
+- `app/` has only been verified via CI (`build-apk.yml`) — no Flutter SDK or emulator has
+  been available locally in this repository's history yet, so the built APK has not been
+  installed and exercised on a real device/emulator. Treat that as still unverified until
+  someone does.
