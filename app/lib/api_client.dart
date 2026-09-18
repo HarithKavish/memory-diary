@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -8,6 +9,7 @@ class Entry {
   final String summary;
   final List<String> tags;
   final String domain;
+  final String? imageKey;
 
   Entry({
     required this.id,
@@ -15,6 +17,7 @@ class Entry {
     required this.summary,
     required this.tags,
     required this.domain,
+    this.imageKey,
   });
 
   factory Entry.fromJson(Map<String, dynamic> json) => Entry(
@@ -23,6 +26,28 @@ class Entry {
         summary: json['summary'] as String? ?? '',
         tags: (json['tags'] as List?)?.map((e) => e.toString()).toList() ?? const [],
         domain: json['domain'] as String? ?? '',
+        imageKey: json['imageKey'] as String?,
+      );
+}
+
+/// One outcome of a submitted command - what the backend actually did, in a shape the
+/// UI renders as a labeled, structured result rather than a sentence.
+class CommandResult {
+  final String action; // create | update | delete | retrieve | noop
+  final String? reason;
+  final Entry? fact; // create/update/delete: the single affected entry
+  final List<Entry> entries; // retrieve: zero or more matches
+
+  CommandResult({required this.action, this.reason, this.fact, this.entries = const []});
+
+  factory CommandResult.fromJson(Map<String, dynamic> json) => CommandResult(
+        action: json['action'] as String,
+        reason: json['reason'] as String?,
+        fact: json['fact'] != null ? Entry.fromJson({...json['fact'] as Map, '_id': json['id'] ?? ''}) : null,
+        entries: (json['entries'] as List?)
+                ?.map((e) => Entry.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 }
 
@@ -62,52 +87,54 @@ class ApiClient {
 
   Future<void> logout() async => _storage.delete(key: _tokenKey);
 
-  Future<Map<String, String>> _authHeaders() async {
+  Future<String> _requireToken() async {
     final token = await _storage.read(key: _tokenKey);
     if (token == null) throw ApiException('not logged in');
+    return token;
+  }
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _requireToken();
     return {'content-type': 'application/json', 'authorization': 'Bearer $token'};
   }
 
-  Future<List<Entry>> listEntries({String? query}) async {
-    final uri = Uri.parse('$baseUrl/entries').replace(
-      queryParameters: query != null && query.isNotEmpty ? {'q': query} : null,
-    );
-    final res = await http.get(uri, headers: await _authHeaders());
-    if (res.statusCode == 401) throw ApiException('session expired');
-    if (res.statusCode != 200) throw ApiException('failed to load entries (${res.statusCode})');
-    final list = jsonDecode(res.body)['entries'] as List;
-    return list.map((e) => Entry.fromJson(e as Map<String, dynamic>)).toList();
+  /// Headers for loading an image via Image.network - same bearer token, no JSON
+  /// content-type since there's no body.
+  Future<Map<String, String>> imageHeaders() async {
+    final token = await _requireToken();
+    return {'authorization': 'Bearer $token'};
   }
 
-  /// Sends free text. The backend decides whether this is a new fact, a correction to
-  /// an existing one, or a deletion, and returns what it did.
-  Future<Map<String, dynamic>> tellIt(String text) async {
+  String imageUrl(String imageKey) => '$baseUrl/images/$imageKey';
+
+  /// Sends free text. The backend decides whether this is a new fact, a correction, a
+  /// deletion, or a retrieval - the response says which, structured, not prose.
+  Future<CommandResult> tellIt(String text) async {
     final res = await http.post(
       Uri.parse('$baseUrl/entries'),
       headers: await _authHeaders(),
       body: jsonEncode({'text': text}),
     );
-    if (res.statusCode == 401) throw ApiException('session expired');
-    if (res.statusCode >= 400) throw ApiException('failed (${res.statusCode}): ${res.body}');
-    return jsonDecode(res.body) as Map<String, dynamic>;
+    if (res.statusCode == 401) throw ApiException('session expired', statusCode: 401);
+    if (res.statusCode >= 400) {
+      throw ApiException('failed (${res.statusCode}): ${res.body}', statusCode: res.statusCode);
+    }
+    return CommandResult.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
-  Future<void> updateEntry(String id, Entry fact) async {
-    final res = await http.patch(
-      Uri.parse('$baseUrl/entries/$id'),
-      headers: await _authHeaders(),
-      body: jsonEncode({
-        'topic': fact.topic,
-        'summary': fact.summary,
-        'tags': fact.tags,
-        'domain': fact.domain,
-      }),
-    );
-    if (res.statusCode != 200) throw ApiException('update failed (${res.statusCode})');
-  }
-
-  Future<void> deleteEntry(String id) async {
-    final res = await http.delete(Uri.parse('$baseUrl/entries/$id'), headers: await _authHeaders());
-    if (res.statusCode != 200) throw ApiException('delete failed (${res.statusCode})');
+  /// Uploads an image: the backend captions it, structures the caption like any other
+  /// fact, and stores both - always a "create" result.
+  Future<CommandResult> uploadImage(File imageFile) async {
+    final token = await _requireToken();
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/images'))
+      ..headers['authorization'] = 'Bearer $token'
+      ..files.add(await http.MultipartFile.fromPath('image', imageFile.path));
+    final streamed = await request.send();
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode == 401) throw ApiException('session expired', statusCode: 401);
+    if (res.statusCode >= 400) {
+      throw ApiException('upload failed (${res.statusCode}): ${res.body}', statusCode: res.statusCode);
+    }
+    return CommandResult.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 }
