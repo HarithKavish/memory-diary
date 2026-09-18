@@ -175,14 +175,20 @@ export async function updateFact(
 }
 
 /** Deletes the Mongo doc, and if it was an image entry, its GridFS file too - an image
- * entry deleted through this app never leaves an orphaned blob behind. */
-export async function deleteFact(env: Env, id: string): Promise<boolean> {
+ * entry deleted through this app never leaves an orphaned blob behind. Returns the
+ * deleted entry's own fields (minus the embedding) so the caller can show what was
+ * actually removed, not just an id. */
+export async function deleteFact(
+  env: Env,
+  id: string
+): Promise<(Omit<MemoryDoc, "embedding"> & { _id: string }) | null> {
   const col = await getCollection(env);
   const deleted = await col.findOneAndDelete({ _id: new ObjectId(id), userId: TENANT_ID });
-  if (!deleted) return false;
+  if (!deleted) return null;
   if (deleted.imageKey) {
     const bucket = await getImageBucket(env);
     await bucket.delete(new ObjectId(deleted.imageKey));
   }
-  return true;
+  const { embedding: _embedding, _id, ...rest } = deleted;
+  return { ...rest, _id: String(_id) };
 }
