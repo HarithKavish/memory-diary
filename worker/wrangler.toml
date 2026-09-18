@@ -6,6 +6,9 @@ compatibility_flags = ["nodejs_compat"]
 [ai]
 binding = "AI"
 
+# Image bytes are stored via GridFS in MongoDB Atlas (see types.ts's imageKey comment),
+# not a Cloudflare storage product - no r2_buckets/kv_namespaces binding needed here.
+
 # Secrets (never set here — pushed via `wrangler secret put <NAME>` or
 # `secretctl push -Target wrangler:memory-diary-worker`):
 #   MONGODB_ATLAS_URI    connection string for the shared Atlas cluster

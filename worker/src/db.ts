@@ -1,6 +1,12 @@
-import { MongoClient, ObjectId } from "mongodb";
+import { GridFSBucket, MongoClient, ObjectId } from "mongodb";
 import type { Env, MemoryDoc } from "./types";
 import { TENANT_ID } from "./types";
+
+/** Separate GridFS bucket (backed by `images.files`/`images.chunks` collections) in the
+ * same database - image bytes never touch the shared `talk.memories` collection other
+ * tenants read. See the imageKey doc comment in types.ts for why GridFS over a
+ * Cloudflare storage product. */
+const IMAGE_BUCKET_NAME = "images";
 
 /**
  * Name of the Atlas Search vector index this collection already has, created by
@@ -37,6 +43,51 @@ async function getClient(env: Env): Promise<MongoClient> {
 async function getCollection(env: Env) {
   const client = await getClient(env);
   return client.db(env.MONGODB_DB).collection<MemoryDoc>(env.MONGODB_COLLECTION);
+}
+
+async function getImageBucket(env: Env) {
+  const client = await getClient(env);
+  return new GridFSBucket(client.db(env.MONGODB_DB), { bucketName: IMAGE_BUCKET_NAME });
+}
+
+/** Buffers the whole image in memory rather than streaming - personal photos are a few
+ * MB at most, and Workers' fetch Response wants a Web ReadableStream while GridFS gives
+ * a Node one, so buffering sidesteps that conversion entirely. Returns the GridFS file
+ * id (as a string) to store as `imageKey`. */
+export async function uploadImage(
+  env: Env,
+  bytes: ArrayBuffer,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const bucket = await getImageBucket(env);
+  const uploadStream = bucket.openUploadStream(filename, { contentType });
+  await new Promise<void>((resolve, reject) => {
+    uploadStream.on("finish", () => resolve());
+    uploadStream.on("error", reject);
+    uploadStream.end(Buffer.from(bytes));
+  });
+  return String(uploadStream.id);
+}
+
+export async function downloadImage(
+  env: Env,
+  fileId: string
+): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  const bucket = await getImageBucket(env);
+  const files = await bucket.find({ _id: new ObjectId(fileId) }).toArray();
+  const file = files[0];
+  if (!file) return null;
+
+  const chunks: Buffer[] = [];
+  const downloadStream = bucket.openDownloadStream(new ObjectId(fileId));
+  for await (const chunk of downloadStream) {
+    chunks.push(chunk as Buffer);
+  }
+  return {
+    bytes: new Uint8Array(Buffer.concat(chunks)),
+    contentType: (file.contentType as string | undefined) ?? "application/octet-stream",
+  };
 }
 
 /** Vector search scoped to this app's own tenant only — never sees another tenant's docs. */
@@ -77,7 +128,8 @@ export async function listRecent(env: Env, limit = 100): Promise<(MemoryDoc & { 
 export async function insertFact(
   env: Env,
   fact: { topic: string; summary: string; tags: string[]; domain: string },
-  embedding: number[]
+  embedding: number[],
+  image?: { key: string; contentType: string }
 ): Promise<string> {
   const col = await getCollection(env);
   const now = new Date().toISOString();
@@ -91,6 +143,7 @@ export async function insertFact(
     source: "memory-diary",
     createdAt: now,
     updatedAt: now,
+    ...(image ? { imageKey: image.key, imageContentType: image.contentType } : {}),
   };
   const result = await col.insertOne(doc as MemoryDoc);
   return String(result.insertedId);
@@ -121,8 +174,15 @@ export async function updateFact(
   return result.matchedCount > 0;
 }
 
+/** Deletes the Mongo doc, and if it was an image entry, its GridFS file too - an image
+ * entry deleted through this app never leaves an orphaned blob behind. */
 export async function deleteFact(env: Env, id: string): Promise<boolean> {
   const col = await getCollection(env);
-  const result = await col.deleteOne({ _id: new ObjectId(id), userId: TENANT_ID });
-  return result.deletedCount > 0;
+  const deleted = await col.findOneAndDelete({ _id: new ObjectId(id), userId: TENANT_ID });
+  if (!deleted) return false;
+  if (deleted.imageKey) {
+    const bucket = await getImageBucket(env);
+    await bucket.delete(new ObjectId(deleted.imageKey));
+  }
+  return true;
 }
