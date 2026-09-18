@@ -67,7 +67,13 @@ export default {
         if (decision.action === "delete") {
           if (!decision.matchId) return json({ error: "delete decided with no matchId" }, 422);
           const deleted = await deleteFact(env, decision.matchId);
-          return json({ action: "delete", id: decision.matchId, deleted, reason: decision.reason });
+          return json({
+            action: "delete",
+            id: decision.matchId,
+            deleted: deleted !== null,
+            fact: deleted,
+            reason: decision.reason,
+          });
         }
 
         if (!decision.fact) return json({ error: "extraction returned no fact" }, 422);
@@ -96,7 +102,10 @@ export default {
         const fact = await structureCaption(env, caption);
         const vector = await embedText(env, `${fact.topic}: ${fact.summary}`);
         const id = await insertFact(env, fact, vector, { key, contentType });
-        return json({ action: "create", id, fact, imageKey: key });
+        // imageKey nested inside fact, not a sibling - every other response shape
+        // (create/update/retrieve) carries an entry's fields inside "fact"/"entries",
+        // and the client's Entry-building logic only looks there.
+        return json({ action: "create", id, fact: { ...fact, imageKey: key } });
       }
 
       const imageKeyMatch = pathname.match(/^\/images\/([a-fA-F0-9]{24})$/);
@@ -124,7 +133,7 @@ export default {
 
       if (entryIdMatch && request.method === "DELETE") {
         const deleted = await deleteFact(env, entryIdMatch[1]);
-        return deleted ? json({ ok: true }) : json({ error: "not found" }, 404);
+        return deleted ? json({ ok: true, fact: deleted }) : json({ error: "not found" }, 404);
       }
 
       return json({ error: "not found" }, 404);
