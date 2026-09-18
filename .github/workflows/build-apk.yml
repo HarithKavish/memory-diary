@@ -39,6 +39,21 @@ jobs:
         working-directory: app
         run: flutter create --platforms=android --project-name=memory_diary --org=com.harithkavish .
 
+      # Recent Flutter templates only add android.permission.INTERNET to the debug
+      # manifest (android/app/src/debug/AndroidManifest.xml), not the release one -
+      # without it the release APK can't make any network request at all, and Android
+      # reports that as a misleading "Failed host lookup" SocketException that looks
+      # exactly like a DNS problem. Confirmed missing via `aapt dump permissions` on
+      # the actual v0.1.0 release APK. Patch it into the real (main) manifest here
+      # since android/ isn't committed and gets regenerated fresh every build.
+      - name: Ensure INTERNET permission is in the release manifest
+        working-directory: app
+        run: |
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET"/>' \
+              android/app/src/main/AndroidManifest.xml
+          grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
       - name: Install dependencies
         working-directory: app
         run: flutter pub get
