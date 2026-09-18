@@ -1,6 +1,6 @@
 import { GridFSBucket, MongoClient, ObjectId } from "mongodb";
 import type { Env, MemoryDoc } from "./types";
-import { TENANT_ID } from "./types";
+import { READ_TENANT_IDS, TENANT_ID } from "./types";
 
 /** Separate GridFS bucket (backed by `images.files`/`images.chunks` collections) in the
  * same database - image bytes never touch the shared `talk.memories` collection other
@@ -90,7 +90,8 @@ export async function downloadImage(
   };
 }
 
-/** Vector search scoped to this app's own tenant only — never sees another tenant's docs. */
+/** Vector search across READ_TENANT_IDS only (a fixed allowlist - never other users'
+ * tenants). Mutations below stay scoped to this app's own tenant regardless. */
 export async function searchSimilar(
   env: Env,
   vector: number[],
@@ -106,7 +107,7 @@ export async function searchSimilar(
           queryVector: vector,
           numCandidates: Math.max(limit * 10, 50),
           limit,
-          filter: { userId: TENANT_ID },
+          filter: { userId: { $in: READ_TENANT_IDS } },
         },
       },
       { $set: { score: { $meta: "vectorSearchScore" } } },
@@ -118,7 +119,7 @@ export async function searchSimilar(
 export async function listRecent(env: Env, limit = 100): Promise<(MemoryDoc & { _id: string })[]> {
   const col = await getCollection(env);
   const docs = await col
-    .find({ userId: TENANT_ID })
+    .find({ userId: { $in: READ_TENANT_IDS } })
     .sort({ updatedAt: -1 })
     .limit(limit)
     .toArray();
