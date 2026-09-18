@@ -1,8 +1,9 @@
 import type { Env } from "./types";
 import { checkPassphrase, issueSessionToken, requireAuth } from "./auth";
-import { deleteFact, insertFact, listRecent, searchSimilar, updateFact } from "./db";
+import { deleteFact, downloadImage, insertFact, listRecent, searchSimilar, updateFact, uploadImage } from "./db";
 import { embedText } from "./embed";
-import { extractFact } from "./llm";
+import { extractFact, structureCaption } from "./llm";
+import { captionImage } from "./vision";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -52,6 +53,17 @@ export default {
           return json({ action: "noop", reason: decision.reason ?? "not a storable fact" });
         }
 
+        if (decision.action === "retrieve") {
+          // No extra DB round trip: the LLM picked matchIds from the candidates we
+          // already fetched, so just filter and return their actual stored fields -
+          // never LLM-synthesized prose, the app renders these as key/value pairs.
+          const matchIds = new Set(decision.matchIds ?? []);
+          const entries = candidates
+            .filter((c) => matchIds.has(c._id))
+            .map(({ embedding: _embedding, ...rest }) => rest);
+          return json({ action: "retrieve", entries, reason: decision.reason });
+        }
+
         if (decision.action === "delete") {
           if (!decision.matchId) return json({ error: "delete decided with no matchId" }, 422);
           const deleted = await deleteFact(env, decision.matchId);
@@ -69,6 +81,31 @@ export default {
 
         const id = await insertFact(env, decision.fact, factVector);
         return json({ action: "create", id, fact: decision.fact });
+      }
+
+      if (pathname === "/images" && request.method === "POST") {
+        const form = await request.formData();
+        const file = form.get("image");
+        if (!(file instanceof File)) return json({ error: "image field is required" }, 400);
+
+        const bytes = await file.arrayBuffer();
+        const contentType = file.type || "application/octet-stream";
+        const key = await uploadImage(env, bytes, file.name || "upload", contentType);
+
+        const caption = await captionImage(env, bytes);
+        const fact = await structureCaption(env, caption);
+        const vector = await embedText(env, `${fact.topic}: ${fact.summary}`);
+        const id = await insertFact(env, fact, vector, { key, contentType });
+        return json({ action: "create", id, fact, imageKey: key });
+      }
+
+      const imageKeyMatch = pathname.match(/^\/images\/([a-fA-F0-9]{24})$/);
+      if (imageKeyMatch && request.method === "GET") {
+        const image = await downloadImage(env, imageKeyMatch[1]);
+        if (!image) return json({ error: "not found" }, 404);
+        return new Response(image.bytes, {
+          headers: { "content-type": image.contentType },
+        });
       }
 
       const entryIdMatch = pathname.match(/^\/entries\/([a-fA-F0-9]{24})$/);
