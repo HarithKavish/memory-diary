@@ -102,7 +102,10 @@ export default {
         const fact = await structureCaption(env, caption);
         const vector = await embedText(env, `${fact.topic}: ${fact.summary}`);
         const id = await insertFact(env, fact, vector, { key, contentType });
-        return json({ action: "create", id, fact, imageKey: key });
+        // imageKey nested inside fact, not a sibling - every other response shape
+        // (create/update/retrieve) carries an entry's fields inside "fact"/"entries",
+        // and the client's Entry-building logic only looks there.
+        return json({ action: "create", id, fact: { ...fact, imageKey: key } });
       }
 
       const imageKeyMatch = pathname.match(/^\/images\/([a-fA-F0-9]{24})$/);
