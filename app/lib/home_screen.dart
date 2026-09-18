@@ -206,7 +206,7 @@ class _ResultCard extends StatelessWidget {
             if (entries.isEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                result.reason ?? (result.action == 'retrieve' ? 'Nothing found.' : ''),
+                result.action == 'retrieve' ? 'No matching record.' : 'No change.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ] else
