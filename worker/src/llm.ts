@@ -20,9 +20,13 @@ Rules:
 - "retrieve": the message is a QUESTION or request to recall something already stored
   (e.g. "what do you know about my school education", "what are my parents' names",
   "show me that photo of my dog") - it is NOT a new fact to save. Set matchIds to every
-  candidate id that genuinely answers it (can be empty if none of the candidates actually
-  match, even though something was passed as a "close" match by vector similarity - only
-  include ids that are truly relevant). Omit matchId and fact.
+  candidate whose topic or summary is plausibly ABOUT the subject asked - be inclusive,
+  not strict: an entry does not need to phrase itself like the question (a stored
+  "Education Institution: <a college>" is relevant to "my school education"; a stored
+  surname or nickname is relevant to "my name"). Missing a related entry is worse than
+  including a borderline one, since the person reads the results. Exclude only candidates
+  that are clearly about something else. Use an empty list only when nothing is related.
+  Omit matchId and fact.
 - "update": the message corrects or adds detail to something already stored (e.g. "actually
   my sister's name is Meera, not Maya"). Set matchId to the existing entry being corrected,
   and "fact" to its new, corrected content in full (not just the diff).
