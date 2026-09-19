@@ -12,8 +12,17 @@ Jarvis already does as tenant `$~jarvis` (see `TENANT_FIELD = "userId"` in
 `$~`; this app uses the plain tenant `userId: "harith"` — the human-authored section other
 systems can read as the canonical profile, as opposed to any agent's own derived memories.
 
-**Every query and mutation in `src/db.ts` filters or matches on `userId: "harith"`.** It
-never reads, searches, or writes another tenant's documents.
+**Writes are scoped to `userId: "harith"` only; reads span a fixed allowlist.** Every
+insert/update/delete in `src/db.ts` matches on `userId: "harith"`, so this app can never
+modify another system's documents (asking it to correct or delete something that lives in
+another tenant is a silent no-op, shown as "No change"). Reads (`searchSimilar`,
+`listRecent`) use `READ_TENANT_IDS` in `src/types.ts`: `harith`, Jarvis's `$~jarvis`, and
+the owner's own `my_chatgpt` account - so one question sees what any of the three systems
+knows. Initially it only read `harith`, which is why asking for things like name or
+education returned "no record": that information already lived in the `my_chatgpt`
+tenant. It is a fixed allowlist, never "all tenants" - `talk.memories` also holds other
+`my_chatgpt` users' private data, which must stay unreachable from here. Jarvis's own
+`recall()` searches the same three (and writes facts about the owner to `harith`).
 
 **Verified live 2026-09-17**: `VECTOR_INDEX_NAME = "vector_index_user"` and
 `EMBEDDING_FIELD = "embedding"` in `src/db.ts` are correct — confirmed end-to-end with a
