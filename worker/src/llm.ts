@@ -11,7 +11,7 @@ Decide exactly one action and reply with ONLY a JSON object, no prose, matching 
 {
   "action": "create" | "update" | "delete" | "retrieve" | "noop",
   "matchId": "<id of the existing entry this refers to, required for update/delete>",
-  "matchIds": ["<id>", ...] (retrieve only - every candidate that actually answers the question),
+  "matchIds": ["<id>", ...] (retrieve only - every candidate plausibly related to the question),
   "reason": "<one short sentence explaining the decision, for logging>",
   "fact": { "topic": "...", "summary": "...", "tags": ["..."], "domain": "..." }
 }
