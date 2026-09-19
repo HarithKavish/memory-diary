@@ -3,6 +3,7 @@ import { checkPassphrase, issueSessionToken, requireAuth } from "./auth";
 import { deleteFact, downloadImage, insertFact, listRecent, searchSimilar, updateFact, uploadImage } from "./db";
 import { embedText } from "./embed";
 import { extractFact, structureCaption } from "./llm";
+import { focusQuery, mergeByBestScore } from "./query";
 import { captionImage } from "./vision";
 
 function json(data: unknown, status = 200): Response {
@@ -46,7 +47,14 @@ export default {
         if (!text || !text.trim()) return json({ error: "text is required" }, 400);
 
         const queryVector = await embedText(env, text);
-        const candidates = await searchSimilar(env, queryVector, 8);
+        // Search with the raw text AND its topic-only form (question wrappers stripped) -
+        // see query.ts for why the wrapper words alone can rank a real answer out.
+        const focus = focusQuery(text);
+        const [primary, focused] = await Promise.all([
+          searchSimilar(env, queryVector, 8),
+          focus ? embedText(env, focus).then((v) => searchSimilar(env, v, 8)) : Promise.resolve([]),
+        ]);
+        const candidates = mergeByBestScore(primary, focused);
         const decision = await extractFact(env, text, candidates);
 
         if (decision.action === "noop") {
