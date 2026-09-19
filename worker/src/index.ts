@@ -6,6 +6,11 @@ import { extractFact, structureCaption } from "./llm";
 import { focusQuery, mergeByBestScore } from "./query";
 import { captionImage } from "./vision";
 
+// Per allowlisted tenant, per query form. Short personal facts all embed within a hair of each
+// other (live: 0.55-0.58 for "school education"), so a relevant one can sit ~9th within its
+// tenant; 8 cut it off. The LLM step does the actual filtering, so err wide.
+const CANDIDATES_PER_TENANT = 20;
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -51,10 +56,10 @@ export default {
         // see query.ts for why the wrapper words alone can rank a real answer out.
         const focus = focusQuery(text);
         const [primary, focused] = await Promise.all([
-          searchSimilar(env, queryVector, 8),
+          searchSimilar(env, queryVector, CANDIDATES_PER_TENANT),
           // best-effort second pass: if it fails, the primary search alone still answers
           focus
-            ? embedText(env, focus).then((v) => searchSimilar(env, v, 8)).catch(() => [])
+            ? embedText(env, focus).then((v) => searchSimilar(env, v, CANDIDATES_PER_TENANT)).catch(() => [])
             : Promise.resolve([]),
         ]);
         const candidates = mergeByBestScore(primary, focused);
