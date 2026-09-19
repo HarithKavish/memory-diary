@@ -46,7 +46,11 @@ export default {
         if (!text || !text.trim()) return json({ error: "text is required" }, 400);
 
         const queryVector = await embedText(env, text);
-        const candidates = await searchSimilar(env, queryVector, 5);
+        // Wide window on purpose: with three tenants in scope, long behavioural notes
+        // from one tenant score ~0.70 against almost any query while precise facts in
+        // another score ~0.60, so a top-5 cut hands the LLM only the noise and the real
+        // answer sits just below it. The LLM picks the relevant ids from the wider set.
+        const candidates = await searchSimilar(env, queryVector, 25);
         const decision = await extractFact(env, text, candidates);
 
         if (decision.action === "noop") {
