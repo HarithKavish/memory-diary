@@ -9,8 +9,24 @@ export interface Env {
   OWNER_PASSPHRASE: string;
 }
 
-/** The tenant this app owns inside the shared `talk.memories` collection. */
+/** The tenant this app owns inside the shared `talk.memories` collection. Every WRITE
+ * (insert/update/delete) is scoped to this tenant only. */
 export const TENANT_ID = "harith";
+
+/**
+ * Tenants this app READS from, in addition to its own - the same three the Jarvis
+ * agent's recall() now searches, so there is one consistent view of what is known
+ * about the owner regardless of which system learned it:
+ *  - TENANT_ID: this app's own canonical profile.
+ *  - "$~jarvis": the Jarvis agent's tenant.
+ *  - the owner's own my_chatgpt account (users.username = "harithkavish", looked up
+ *    directly in the `users` collection, not guessed). This is where most of the
+ *    owner's personal info already lives - memory-diary reporting "no record" for
+ *    things like name/education/parents was because it never searched here.
+ * Deliberately a fixed allowlist, not "all tenants": talk.memories also holds other
+ * my_chatgpt users' private data, which must never be readable from here.
+ */
+export const READ_TENANT_IDS = [TENANT_ID, "$~jarvis", "69ad9e8a3c88f37edc71a50f"];
 
 // No `_id` field here deliberately - the mongodb driver adds it automatically as
 // ObjectId via WithId<MemoryDoc> on anything read back, and OptionalId<MemoryDoc> on
