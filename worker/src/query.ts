@@ -13,6 +13,9 @@ const FILLER = new Set([
   "about", "regarding", "of", "on", "the", "a", "an", "any", "all", "some",
   "have", "has", "had", "can", "could", "would", "should", "will", "please", "there",
   "info", "information", "details", "stored", "saved", "record", "records",
+  // contractions, after apostrophes are stripped below ("what's" -> "whats")
+  "whos", "wheres", "hows", "thats", "lets", "im", "ive", "youre", "youve", "dont",
+  "doesnt", "didnt", "cant", "wont", "isnt", "arent",
 ]);
 
 /** Returns the topic-only form of `text`, or null when stripping leaves nothing usable
@@ -20,7 +23,8 @@ const FILLER = new Set([
 export function focusQuery(text: string): string | null {
   const tokens = text
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/['’]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
     .split(/\s+/)
     .filter(Boolean);
   const kept = tokens.filter((t) => !FILLER.has(t));

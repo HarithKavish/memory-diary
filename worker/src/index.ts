@@ -52,7 +52,10 @@ export default {
         const focus = focusQuery(text);
         const [primary, focused] = await Promise.all([
           searchSimilar(env, queryVector, 8),
-          focus ? embedText(env, focus).then((v) => searchSimilar(env, v, 8)) : Promise.resolve([]),
+          // best-effort second pass: if it fails, the primary search alone still answers
+          focus
+            ? embedText(env, focus).then((v) => searchSimilar(env, v, 8)).catch(() => [])
+            : Promise.resolve([]),
         ]);
         const candidates = mergeByBestScore(primary, focused);
         const decision = await extractFact(env, text, candidates);
