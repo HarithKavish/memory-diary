@@ -91,29 +91,42 @@ export async function downloadImage(
 }
 
 /** Vector search across READ_TENANT_IDS only (a fixed allowlist - never other users'
- * tenants). Mutations below stay scoped to this app's own tenant regardless. */
+ * tenants). Mutations below stay scoped to this app's own tenant regardless.
+ *
+ * `limitPerTenant` is per tenant, not overall: each tenant is searched separately and the
+ * results merged by score. A single search over all three let one tenant's long
+ * behavioural notes (scoring ~0.70 against almost anything) fill every slot and rank out
+ * another tenant's precise facts (~0.60) - e.g. an education fact that clearly exists
+ * never reached the LLM. One connection, searches run in parallel. */
 export async function searchSimilar(
   env: Env,
   vector: number[],
-  limit = 5
+  limitPerTenant = 5
 ): Promise<(MemoryDoc & { _id: string; score: number })[]> {
   const col = await getCollection(env);
-  const results = await col
-    .aggregate([
-      {
-        $vectorSearch: {
-          index: VECTOR_INDEX_NAME,
-          path: EMBEDDING_FIELD,
-          queryVector: vector,
-          numCandidates: Math.max(limit * 10, 50),
-          limit,
-          filter: { userId: { $in: READ_TENANT_IDS } },
-        },
-      },
-      { $set: { score: { $meta: "vectorSearchScore" } } },
-    ])
-    .toArray();
-  return results.map((r) => ({ ...(r as MemoryDoc), _id: String(r._id), score: r.score }));
+  const perTenant = await Promise.all(
+    READ_TENANT_IDS.map((tenant) =>
+      col
+        .aggregate([
+          {
+            $vectorSearch: {
+              index: VECTOR_INDEX_NAME,
+              path: EMBEDDING_FIELD,
+              queryVector: vector,
+              numCandidates: Math.max(limitPerTenant * 10, 50),
+              limit: limitPerTenant,
+              filter: { userId: tenant },
+            },
+          },
+          { $set: { score: { $meta: "vectorSearchScore" } } },
+        ])
+        .toArray()
+    )
+  );
+  return perTenant
+    .flat()
+    .map((r) => ({ ...(r as MemoryDoc), _id: String(r._id), score: r.score as number }))
+    .sort((a, b) => b.score - a.score);
 }
 
 export async function listRecent(env: Env, limit = 100): Promise<(MemoryDoc & { _id: string })[]> {
