@@ -14,19 +14,38 @@ export interface Env {
 export const TENANT_ID = "harith";
 
 /**
- * Tenants this app READS from, in addition to its own - the same three the Jarvis
- * agent's recall() now searches, so there is one consistent view of what is known
- * about the owner regardless of which system learned it:
- *  - TENANT_ID: this app's own canonical profile.
- *  - "$~jarvis": the Jarvis agent's tenant.
+ * Tenants this app READS from, in addition to its own - the same set the Jarvis
+ * agent's recall() searches, so there is one consistent view of what is known
+ * about the owner regardless of which system learned it.
+ *
+ * As of 2026-09-20 a tenant is a SECTION: what a memory is *about*, rather than
+ * which system happened to record it. That is what makes one format work across
+ * every current and future system:
+ *  - TENANT_ID ("harith"): facts about the owner. This app's own canonical
+ *    profile, and the section every system writes the owner's facts to.
+ *  - "$~jarvis": facts about the Jarvis agent itself - its identity, architecture
+ *    and operating doctrine. Each agent owns a "$~<agent>" section for its own
+ *    self-knowledge; a future system adds one without migrating anything.
+ *  - WORLD_TENANT_ID ("world"): everything that is about neither the owner nor any
+ *    one agent - infrastructure, tooling, how things work. Shared and
+ *    system-agnostic, deliberately not "$~"-prefixed because it belongs to no
+ *    single agent.
  *  - the owner's own my_chatgpt account (users.username = "harithkavish", looked up
  *    directly in the `users` collection, not guessed). This is where most of the
  *    owner's personal info already lives - memory-diary reporting "no record" for
  *    things like name/education/parents was because it never searched here.
+ *
  * Deliberately a fixed allowlist, not "all tenants": talk.memories also holds other
  * my_chatgpt users' private data, which must never be readable from here.
  */
-export const READ_TENANT_IDS = [TENANT_ID, "$~jarvis", "69ad9e8a3c88f37edc71a50f"];
+export const WORLD_TENANT_ID = "world";
+
+export const READ_TENANT_IDS = [
+  TENANT_ID,
+  "$~jarvis",
+  WORLD_TENANT_ID,
+  "69ad9e8a3c88f37edc71a50f",
+];
 
 // No `_id` field here deliberately - the mongodb driver adds it automatically as
 // ObjectId via WithId<MemoryDoc> on anything read back, and OptionalId<MemoryDoc> on
