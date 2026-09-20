@@ -40,6 +40,49 @@ export const TENANT_ID = "harith";
  */
 export const WORLD_TENANT_ID = "world";
 
+/** People Harith knows get one section each: "@" + a slug of their name, the way "$~"
+ * marks an agent's own section. A fact about a person belongs to that person - "Kevin is
+ * 23" goes to `@kevin`, while what lands in `harith` is the relationship ("Kevin is an
+ * office friend"). Person sections are discovered at read time rather than listed here,
+ * because the set grows as he meets people. */
+export const PERSON_PREFIX = "@";
+
+export function personTenant(name: string): string {
+  const slug = (name ?? "")
+    .replace(/[^\p{L}\p{N} \-_]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .toLowerCase();
+  if (!slug) throw new Error("person name is empty after normalisation");
+  return PERSON_PREFIX + slug;
+}
+
+/** Sections this app may WRITE. Deliberately narrower than what it reads: the owner's
+ * own section, the shared world section, and any person's section. Never "$~jarvis"
+ * (an agent's private self-knowledge, which only that agent should author) and never
+ * another my_chatgpt account. */
+export function isWritableTenant(tenant: string): boolean {
+  return (
+    tenant === TENANT_ID ||
+    tenant === WORLD_TENANT_ID ||
+    tenant.startsWith(PERSON_PREFIX)
+  );
+}
+
+/** Resolve the classifier's chosen section to the tenant that owns it. */
+export function resolveWriteTenant(section?: string, person?: string): string {
+  switch ((section ?? "").toLowerCase()) {
+    case "world":
+      return WORLD_TENANT_ID;
+    case "person":
+      if (!person) throw new Error("section 'person' requires a person name");
+      return personTenant(person);
+    default:
+      return TENANT_ID;
+  }
+}
+
 export const READ_TENANT_IDS = [
   TENANT_ID,
   "$~jarvis",
@@ -84,5 +127,10 @@ export interface ExtractionResult {
     summary: string;
     tags: string[];
     domain: string;
+    /** Which section this fact belongs to, by who or what it is ABOUT. Defaults to
+     * the owner's own section when the classifier omits it. */
+    section?: "user" | "world" | "person";
+    /** Required when section is "person": whose section this is. */
+    person?: string;
   };
 }

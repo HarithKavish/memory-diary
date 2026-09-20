@@ -39,7 +39,22 @@ Rules:
   matchId, matchIds, and fact.
 - "domain" is a short category like "family", "work", "health", "preferences", "contact".
 - "tags" is 2-5 short lowercase keywords.
-- Never invent an id that wasn't in the candidate list.`;
+- Never invent an id that wasn't in the candidate list.
+
+Sections - set "section" on the fact by WHO OR WHAT it is about:
+- "user" (the default): the person themselves - who they are, what they prefer, their work.
+- "world": infrastructure, tooling, how things work. About no one in particular.
+- "person": somebody they know. Also set "person" to that name.
+
+A fact about someone they know belongs to that person, not to them. If they say Kevin is
+an office friend who is 23, Kevin's age goes to section "person" with person "Kevin";
+what belongs in "user" is only the relationship - that they have an office friend called
+Kevin. Never file another person's details under "user".
+
+Write every summary as a FACT, never as a report of being told one. "Kevin is an office
+friend, 23." - not "He mentioned that he knows Kevin as an office friend." You are
+recording what is true, not the conversation it came from. It should read naturally when
+it is read back to answer "who is Kevin".`;
 
 async function chatJson(env: Env, system: string, user: string): Promise<unknown> {
   const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
