@@ -26,8 +26,8 @@ export const TENANT_ID = "harith";
  *  - "$~jarvis": facts about the Jarvis agent itself - its identity, architecture
  *    and operating doctrine. Each agent owns a "$~<agent>" section for its own
  *    self-knowledge; a future system adds one without migrating anything.
- *  - WORLD_TENANT_ID ("world"): everything that is about neither the owner nor any
- *    one agent - infrastructure, tooling, how things work. Shared and
+ *  - WORKSPACE_TENANT_ID ("workspace"): the projects, the infrastructure they run
+ *    on, the tooling. About neither the owner nor any one agent. Shared and
  *    system-agnostic, deliberately not "$~"-prefixed because it belongs to no
  *    single agent.
  *  - the owner's own my_chatgpt account (users.username = "harithkavish", looked up
@@ -38,7 +38,7 @@ export const TENANT_ID = "harith";
  * Deliberately a fixed allowlist, not "all tenants": talk.memories also holds other
  * my_chatgpt users' private data, which must never be readable from here.
  */
-export const WORLD_TENANT_ID = "world";
+export const WORKSPACE_TENANT_ID = "workspace";
 
 /** People Harith knows get one section each: "@" + a slug of their name, the way "$~"
  * marks an agent's own section. A fact about a person belongs to that person - "Kevin is
@@ -65,7 +65,7 @@ export function personTenant(name: string): string {
 export function isWritableTenant(tenant: string): boolean {
   return (
     tenant === TENANT_ID ||
-    tenant === WORLD_TENANT_ID ||
+    tenant === WORKSPACE_TENANT_ID ||
     tenant.startsWith(PERSON_PREFIX)
   );
 }
@@ -73,8 +73,9 @@ export function isWritableTenant(tenant: string): boolean {
 /** Resolve the classifier's chosen section to the tenant that owns it. */
 export function resolveWriteTenant(section?: string, person?: string): string {
   switch ((section ?? "").toLowerCase()) {
-    case "world":
-      return WORLD_TENANT_ID;
+    case "workspace":
+    case "world": // earlier name for the same section
+      return WORKSPACE_TENANT_ID;
     case "person":
       if (!person) throw new Error("section 'person' requires a person name");
       return personTenant(person);
@@ -86,7 +87,7 @@ export function resolveWriteTenant(section?: string, person?: string): string {
 export const READ_TENANT_IDS = [
   TENANT_ID,
   "$~jarvis",
-  WORLD_TENANT_ID,
+  WORKSPACE_TENANT_ID,
   "69ad9e8a3c88f37edc71a50f",
 ];
 
@@ -129,7 +130,7 @@ export interface ExtractionResult {
     domain: string;
     /** Which section this fact belongs to, by who or what it is ABOUT. Defaults to
      * the owner's own section when the classifier omits it. */
-    section?: "user" | "world" | "person";
+    section?: "user" | "workspace" | "person";
     /** Required when section is "person": whose section this is. */
     person?: string;
   };

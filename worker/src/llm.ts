@@ -43,7 +43,8 @@ Rules:
 
 Sections - set "section" on the fact by WHO OR WHAT it is about:
 - "user" (the default): the person themselves - who they are, what they prefer, their work.
-- "world": infrastructure, tooling, how things work. About no one in particular.
+- "workspace": the projects, the infrastructure they run on, the tooling. About no
+  one in particular.
 - "person": somebody they know. Also set "person" to that name.
 
 A fact about someone they know belongs to that person, not to them. If they say Kevin is
