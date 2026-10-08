@@ -1,6 +1,23 @@
 import { GridFSBucket, MongoClient, ObjectId } from "mongodb";
 import type { Env, MemoryDoc } from "./types";
-import { READ_TENANT_IDS, TENANT_ID } from "./types";
+import { isWritableTenant, PERSON_PREFIX, READ_TENANT_IDS, TENANT_ID } from "./types";
+
+/** READ_TENANT_IDS plus every person section that exists.
+ *
+ * Person sections cannot be a static list - the set grows as he meets people - so they
+ * are discovered per request with a distinct(). Still an allowlist and not "all
+ * tenants": only the fixed ids plus "@"-prefixed sections are ever included, so other
+ * my_chatgpt users' private tenants stay unreadable from here. */
+async function readTenants(env: Env): Promise<string[]> {
+  const col = await getCollection(env);
+  try {
+    const all = (await col.distinct("userId")) as unknown as string[];
+    const people = all.filter((t) => typeof t === "string" && t.startsWith(PERSON_PREFIX));
+    return [...new Set([...READ_TENANT_IDS, ...people])];
+  } catch {
+    return [...READ_TENANT_IDS];
+  }
+}
 
 /** Separate GridFS bucket (backed by `images.files`/`images.chunks` collections) in the
  * same database - image bytes never touch the shared `talk.memories` collection other
@@ -104,8 +121,9 @@ export async function searchSimilar(
   limitPerTenant = 5
 ): Promise<(MemoryDoc & { _id: string; score: number })[]> {
   const col = await getCollection(env);
+  const tenants = await readTenants(env);
   const perTenant = await Promise.all(
-    READ_TENANT_IDS.map((tenant) =>
+    tenants.map((tenant) =>
       col
         .aggregate([
           {
@@ -132,7 +150,7 @@ export async function searchSimilar(
 export async function listRecent(env: Env, limit = 100): Promise<(MemoryDoc & { _id: string })[]> {
   const col = await getCollection(env);
   const docs = await col
-    .find({ userId: { $in: READ_TENANT_IDS } })
+    .find({ userId: { $in: await readTenants(env) } })
     .sort({ updatedAt: -1 })
     .limit(limit)
     .toArray();
@@ -143,12 +161,16 @@ export async function insertFact(
   env: Env,
   fact: { topic: string; summary: string; tags: string[]; domain: string },
   embedding: number[],
-  image?: { key: string; contentType: string }
+  image?: { key: string; contentType: string },
+  tenant: string = TENANT_ID
 ): Promise<string> {
+  if (!isWritableTenant(tenant)) {
+    throw new Error(`refusing to write to section ${tenant}`);
+  }
   const col = await getCollection(env);
   const now = new Date().toISOString();
   const doc: MemoryDoc = {
-    userId: TENANT_ID,
+    userId: tenant,
     topic: fact.topic,
     summary: fact.summary,
     tags: fact.tags,
@@ -163,8 +185,15 @@ export async function insertFact(
   return String(result.insertedId);
 }
 
-/** Every mutation re-checks `userId: TENANT_ID` in its filter, so an id from another
- * tenant (or a bug elsewhere) can never be edited or deleted through this app. */
+/** Every mutation re-checks the section in its filter, so an id from a section this app
+ * may not write (an agent's own "$~" section, another my_chatgpt account) can never be
+ * edited or deleted through this app even if its id is known. The check is a predicate
+ * rather than a single id because the app now writes the owner's section, the shared
+ * world section and per-person sections. */
+async function writableFilter(env: Env): Promise<{ $in: string[] }> {
+  const tenants = (await readTenants(env)).filter(isWritableTenant);
+  return { $in: tenants };
+}
 export async function updateFact(
   env: Env,
   id: string,
@@ -173,7 +202,7 @@ export async function updateFact(
 ): Promise<boolean> {
   const col = await getCollection(env);
   const result = await col.updateOne(
-    { _id: new ObjectId(id), userId: TENANT_ID },
+    { _id: new ObjectId(id), userId: await writableFilter(env) },
     {
       $set: {
         topic: fact.topic,
@@ -197,7 +226,10 @@ export async function deleteFact(
   id: string
 ): Promise<(Omit<MemoryDoc, "embedding"> & { _id: string }) | null> {
   const col = await getCollection(env);
-  const deleted = await col.findOneAndDelete({ _id: new ObjectId(id), userId: TENANT_ID });
+  const deleted = await col.findOneAndDelete({
+    _id: new ObjectId(id),
+    userId: await writableFilter(env),
+  });
   if (!deleted) return null;
   if (deleted.imageKey) {
     const bucket = await getImageBucket(env);
