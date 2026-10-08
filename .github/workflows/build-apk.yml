@@ -39,6 +39,39 @@ jobs:
         working-directory: app
         run: flutter create --platforms=android --project-name=memory_diary --org=com.harithkavish .
 
+      # First, so a missing secret fails in seconds rather than after a ten-minute
+      # build, and before anything is versioned, committed or released.
+      - name: Require release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          MISSING=""
+          for s in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [ -n "${!s}" ] || MISSING="$MISSING $s"
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing signing secrets:$MISSING"
+            {
+              echo "### Not building: release signing is not configured"
+              echo ""
+              echo "Missing repository secrets:$MISSING"
+              echo ""
+              echo "Android identifies an app by its signing key, so every published build must"
+              echo "use the same one. Create it once and keep it safe -- a lost key means users"
+              echo "can never update the app again:"
+              echo ""
+              echo '    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \'
+              echo '      -keyalg RSA -keysize 4096 -validity 10000'
+              echo '    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64'
+              echo ""
+              echo "Then add the four secrets to the repository (Settings → Secrets → Actions)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       # Recent Flutter templates only add android.permission.INTERNET to the debug
       # manifest (android/app/src/debug/AndroidManifest.xml), not the release one -
       # without it the release APK can't make any network request at all, and Android
@@ -50,9 +83,63 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET"/>' \
+            sed -i '/<application/i\\    <uses-permission android:name="android.permission.INTERNET"/>' \
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
+      # Patch the generated build.gradle.kts to use release signing when the
+      # keystore secrets are present. The flutter create step regenerates this file
+      # fresh every build, so we patch it in-place here.
+      - name: Patch build.gradle.kts for release signing
+        working-directory: app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          GRADLE_FILE="android/app/build.gradle.kts"
+          [ -f "$GRADLE_FILE" ] || { echo "::error::$GRADLE_FILE not found"; exit 1; }
+
+          # Read the file
+          CONTENT=$(cat "$GRADLE_FILE")
+
+          # Build the signingConfigs block
+          SIGNING_CONFIG='
+    signingConfigs {
+        create("release") {
+            val storeFile = System.getenv("ANDROID_KEYSTORE_BASE64")?.let { File("$buildDir/../release.jks").also { it.writeText(Base64.getDecoder().decode(it)) } }
+            storeFile = storeFile
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }'
+
+          # Check if signingConfigs already exists
+          if echo "$CONTENT" | grep -q "signingConfigs"; then
+            # Replace existing signingConfigs block
+            CONTENT=$(echo "$CONTENT" | sed -e '/signingConfigs {/,/^[[:space:]]*}/c\'"$SIGNING_CONFIG")
+          else
+            # Insert after the android { line
+            CONTENT=$(echo "$CONTENT" | sed -e '/^android {/a\'"$SIGNING_CONFIG")
+          fi
+
+          # Ensure the release buildType uses the signing config
+          if ! echo "$CONTENT" | grep -q 'signingConfig = signingConfigs.getByName("release")'; then
+            CONTENT=$(echo "$CONTENT" | sed -e '/buildTypes {/a\        release {\n            signingConfig = signingConfigs.getByName("release")\n        }')
+          fi
+
+          echo "$CONTENT" > "$GRADLE_FILE"
+          echo "=== Patched $GRADLE_FILE ==="
+          cat "$GRADLE_FILE"
+
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          [ -s "$RUNNER_TEMP/release.jks" ] || { echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore"; exit 1; }
 
       - name: Install dependencies
         working-directory: app
@@ -64,9 +151,38 @@ jobs:
 
       - name: Build release APK
         working-directory: app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         # WORKER_BASE_URL is a repository *variable*, not a secret — it's the Worker's
         # public HTTPS URL, safe to compile into a public APK.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.WORKER_BASE_URL }}
+
+      # "Signed" is not the question: the debug-signed APKs were signed too. The
+      # question is by whom, so this fails on the debug certificate specifically.
+      - name: Refuse a debug-signed APK
+        working-directory: app
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          [ -n "$APK" ] || { echo "::error::No release APK was produced"; exit 1; }
+          CERTS=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK")
+          echo "$CERTS"
+          if echo "$CERTS" | grep -q "CN=Android Debug"; then
+            echo "::error::$APK is signed with the Android debug key -- refusing to release it"
+            exit 1
+          fi
+          {
+            echo "### Release signing"
+            echo '```'
+            echo "$CERTS" | grep -E "DN:|SHA-256"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
 
       - uses: actions/upload-artifact@v4
         with:
