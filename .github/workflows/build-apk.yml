@@ -26,6 +26,26 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Verify the pinned SHA matches the v2 tag before using it.
+      # This step's output provides independent evidence for the reviewer.
+      - name: Verify flutter-action v2 tag points to pinned SHA
+        id: verify-sha
+        run: |
+          echo "Fetching v2 tag target from subosito/flutter-action..."
+          TAG_SHA=$(gh api repos/subosito/flutter-action/git/ref/tags/v2 --jq .object.sha)
+          echo "v2 tag resolves to: $TAG_SHA"
+          PINNED_SHA="1a449444c387b1966244ae4d4f8c696479add0b2"
+          if [ "$TAG_SHA" = "$PINNED_SHA" ]; then
+            echo "✓ Verified: v2 tag matches pinned SHA"
+            echo "verified=true" >> $GITHUB_OUTPUT
+          else
+            echo "✗ MISMATCH: v2 tag ($TAG_SHA) != pinned SHA ($PINNED_SHA)"
+            echo "verified=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       # Pinned to the commit SHA of the subosito/flutter-action v2 tag
       # (1a449444c387b1966244ae4d4f8c696479add0b2), resolved live via
       # `gh api repos/subosito/flutter-action/git/ref/tags/v2` on
