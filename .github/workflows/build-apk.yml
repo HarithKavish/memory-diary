@@ -3,14 +3,14 @@ name: Build APK
 on:
   push:
     branches: [main, development]
-    tags: ["v*"]
+    tags: [\"v*\"]
     paths:
-      - "app/**"
-      - ".github/workflows/build-apk.yml"
+      - \"app/**\"
+      - \".github/workflows/build-apk.yml\"
   pull_request:
     branches: [development]
     paths:
-      - "app/**"
+      - \"app/**\"
 
 permissions:
   contents: write # needed for `gh release create` on a tag push
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: \"17\"
 
       # subosito/flutter-action v2 @ 1a449444c387b1966244ae4d4f8c696479add0b2 (resolved 2026-10-12)
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
@@ -38,12 +38,12 @@ jobs:
       # folder, it does not touch lib/ or pubspec.yaml.
       - name: Generate Android platform scaffold
         working-directory: app
-        run: flutter create --platforms=android --project-name=memory_diary --org=com.harithkavish .
+        run: flutter create --platforms=android --project_name=memory_diary --org=com.harithkavish .
 
       # Recent Flutter templates only add android.permission.INTERNET to the debug
       # manifest (android/app/src/debug/AndroidManifest.xml), not the release one -
       # without it the release APK can't make any network request at all, and Android
-      # reports that as a misleading "Failed host lookup" SocketException that looks
+      # reports that as a misleading \"Failed host lookup\" SocketException that looks
       # exactly like a DNS problem. Confirmed missing via `aapt dump permissions` on
       # the actual v0.1.0 release APK. Patch it into the real (main) manifest here
       # since android/ isn't committed and gets regenerated fresh every build.
@@ -51,9 +51,29 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i '/<application/i\\    <uses-permission android:name=\"android.permission.INTERNET\"/>' \
+            sed -i '/<application/ i\\    <uses-permission android:name=\\\"android.permission.INTERNET\\\"/>\\' \
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: app
+        # WORKER_BASE_URL is a repository *variable*, not a secret — it's the Worker's
+        # public HTTPS URL, safe to compile into a public APK.
+        run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.WORKER_BASE_URL }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memory-diary-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
 
       # First, so a missing secret fails in seconds rather than after a ten-minute
       # build, and before anything is versioned, committed or released.
@@ -64,29 +84,12 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          MISSING=""
+          MISSING=\"\"
           for s in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
-            [ -n "${!s}" ] || MISSING="$MISSING $s"
+            [ -n \"${!s}\" ] || MISSING=\"$MISSING $s\"
           done
-          if [ -n "$MISSING" ]; then
-            echo "::error::Missing signing secrets:$MISSING"
-            {
-              echo "### Not building: release signing is not configured"
-              echo ""
-              echo "Missing repository secrets:$MISSING"
-              echo ""
-              echo "Android identifies an app by its signing key, so every published build must"
-              echo "use the same one. Create it once and keep it safe -- a lost key means users"
-              echo "can never update the app again:"
-              echo ""
-              echo "    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\"
-              echo "      -keyalg RSA -keysize 4096 -validity 10000"
-              echo "    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64"
-              echo ""
-              echo "Then add the four secrets to the repository (Settings → Secrets → Actions)."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+          if [ -n \"$MISSING\" ]; then
+            echo \"::error::Missing signing secrets:$MISSING\"\n            {\n              echo \"### Not building: release signing is not configured\"\n              echo \"\"\n              echo \"Missing repository secrets:$MISSING\"\n              echo \"\"\n              echo \"Android identifies an app by its signing key, so every published build must\"\n              echo \"use the same one. Create it once and keep it safe -- a lost key means users\"\n              echo \"can never update the app again:\"\n              echo \"\"\n              echo \"    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\\\\"\n              echo \"      -keyalg RSA -keysize 4096 -validity 10000\"\n              echo \"    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64\"\n              echo \"\"\n              echo \"Then add the four secrets to the repository (Settings → Secrets → Actions).\"\n            } >> \"$GITHUB_STEP_SUMMARY\"\n            exit 1\n          fi
 
       # Patch the generated build.gradle.kts to use release signing when the
       # keystore secrets are present. The flutter create step regenerates this file
@@ -98,37 +101,62 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          GRADLE_FILE="android/app/build.gradle.kts"
-          [ -f "$GRADLE_FILE" ] || { echo "::error::$GRADLE_FILE not found"; exit 1; }
+          GRADLE_FILE: \"android/app/build.gradle.kts\"
+          SIGNING_CONFIG: \"\\n    signingConfigs {\\n        create(\"release\") {\\n            storeFile = file(System.getenv(\"RUNNER_TEMP\") + \"/release.jks\")\\n            storePassword = System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\\n            keyAlias = System.getenv(\"ANDROID_KEY_ALIAS\")\\n            keyPassword = System.getenv(\"ANDROID_KEY_PASSWORD\")\\n        }\\n    }\"\n        run: |
+          [ -f \"$GRADLE_FILE\" ] || { echo \"::error::$GRADLE_FILE not found\"; exit 1; }
 
           # Read the file
-          CONTENT=$(cat "$GRADLE_FILE")
+          CONTENT=$(cat \"$GRADLE_FILE\")
 
-          # Build the signingConfigs block
-          SIGNING_CONFIG='\n    signingConfigs {\n        create("release") {\n            storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")\n            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")\n            keyAlias = System.getenv("ANDROID_KEY_ALIAS")\n            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")\n        }\n    }'
-
+          # Use Python to do the modifications
+          python3 - <<'EOF'
+          import os
+          import sys
+          gradle_file = os.environ[\"GRADLE_FILE\"]
+          with open(gradle_file, \"r\") as f:
+              content = f.read()
+          signing_config = os.environ[\"SIGNING_CONFIG\"]
           # Insert signingConfigs block after android { line if not already present
-          if ! echo "$CONTENT" | grep -q '^[[:space:]]*signingConfigs {'; then
-            CONTENT=$(echo "$CONTENT" | sed -e '/^[[:space:]]*android {/a\\'"$SIGNING_CONFIG"')
-          fi
-
+          if \"signingConfigs {\" not in content:
+              lines = content.splitlines()
+              new_lines = []
+              inserted = False
+              for line in lines:
+                  new_lines.append(line)
+                  if line.strip().startswith(\"android {\"):
+                      new_lines.append(signing_config)
+                      inserted = True
+              if inserted:
+                  content = \"\\n\".join(new_lines)
           # Ensure release buildType uses the signing config
-          if ! echo "$CONTENT" | grep -q '^[[:space:]]*signingConfig = signingConfigs.getByName("release")'; then
-            # Insert after the line containing release { inside buildTypes
-            CONTENT=$(echo "$CONTENT" | sed -e '/^[[:space:]]*release {/a\\            signingConfig = signingConfigs.getByName("release")')
-          fi
+          if \"signingConfig = signingConfigs.getByName(\\\"release\\\")\" not in content:
+              lines = content.splitlines()
+              new_lines = []
+              inserted = False
+              for line in lines:
+                  new_lines.append(line)
+                  if line.strip().startswith(\"release {\"):
+                      new_lines.append(\"            signingConfig = signingConfigs.getByName(\\\"release\\\")\")
+                      inserted = True
+              if inserted:
+                  content = \"\\n\".join(new_lines)
+          # Replace debug signing line with release
+          if \"signingConfig = signingConfigs.getByName(\\\"debug\\\")\" in content:
+              content = content.replace('signingConfig = signingConfigs.getByName(\\\"debug\\\")', 'signingConfig = signingConfigs.getByName(\\\"release\\\")')
+          with open(gradle_file, \"w\") as f:
+              f.write(content)
+          EOF
 
-          echo "$CONTENT" > "$GRADLE_FILE"
-          echo "=== Patched $GRADLE_FILE (signingConfigs and release buildType) ==="
-          grep -A 6 "signingConfigs" "$GRADLE_FILE" || true
-          grep -A 4 "buildTypes {" "$GRADLE_FILE" | head -5 || true
+          echo \"=== Patched $GRADLE_FILE (signingConfigs and release buildType) ===\"
+          grep -A 6 \"signingConfigs\" \"$GRADLE_FILE\" || true
+          grep -A 4 \"buildTypes {\" \"$GRADLE_FILE\" | head -5 || true
+
       - name: Decode signing keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          [ -s "$RUNNER_TEMP/release.jks" ] || { echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore"; exit 1; }
+          echo \"$ANDROID_KEYSTORE_BASE64\" | base64 --decode > \"$RUNNER_TEMP/release.jks\"
+          [ -s \"$RUNNER_TEMP/release.jks\" ] || { echo \"::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore\"; exit 1; }
 
       - name: Install dependencies
         working-directory: app
@@ -149,57 +177,14 @@ jobs:
         # public HTTPS URL, safe to compile into a public APK.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.WORKER_BASE_URL }}
 
-      # "Signed" is not the question: the debug-signed APKs were signed too. The
+      # \"Signed\" is not the question: the debug-signed APKs were signed too. The
       # question is by whom, so this fails on the debug certificate specifically.
       - name: Refuse a debug-signed APK
         working-directory: app
         run: |
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          [ -n "$APK" ] || { echo "::error::No release APK was produced"; exit 1; }
-          [ -f "$APK" ] || { echo "::error::Expected APK not found: $APK"; exit 1; }
+          APK=\"build/app/outputs/flutter-apk/app-release.apk\"
+          [ -n \"$APK\" ] || { echo \"::error::No release APK was produced\"; exit 1; }
+          [ -f \"$APK\" ] || { echo \"::error::Expected APK not found: $APK\"; exit 1; }
           # Use apksigner from Android SDK (ANDROID_HOME should be set by flutter-action)
-          if [ -z "$ANDROID_HOME" ]; then
-            echo "::error::ANDROID_HOME not set"
-            exit 1
-          fi
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          if [ ! -f "$APKSIGNER" ]; then
-            # Try to find apksigner in PATH as fallback
-            APKSIGNER=$(command -v apksigner)
-            if [ -z "$APKSIGNER" ]; then
-              echo "::error::apksigner not found in ANDROID_HOME or PATH"
-              exit 1
-            fi
-          fi
-          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
-          echo "$CERTS"
-          if echo "$CERTS" | grep -q "CN=Android Debug"; then
-            echo "::error::$APK is signed with the Android debug key -- refusing to release it"
-            exit 1
-          fi
-          {
-            echo "### Release signing"
-            echo '```'
-            echo "$CERTS" | grep -E "DN:|SHA-256"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Remove decoded keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/release.jks"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: memory-diary-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
-      - name: Attach APK to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes \
-            app/build/app/outputs/flutter-apk/app-release.apk
+          if [ -z \"$ANDROID_HOME\" ]; then
+            echo \"::error::ANDROID_HOME not set\"\n            exit 1\n          fi\n          APKSIGNER=\"$ANDROID_HOME/build-tools/35.0.0/apksigner\"\n          if [ ! -f \"$APKSIGNER\" ]; then\n            # Try to find apksigner in PATH as fallback\n            APKSIGNER=$(command -v apksigner)\n            if [ -z \"$APKSIGNER\" ]; then\n              echo \"::error::apksigner not found in ANDROID_HOME or PATH\"\n              exit 1\n            fi\n          fi\n          CERTS=$(\"$APKSIGNER\" verify --print-certs \"$APK\")\n          echo \"$CERTS\"\n          if echo \"$CERTS\" | grep -q \"CN=Android Debug\"; then\n            echo \"::error::$APK is signed with the Android debug key -- refusing to release it\"\n            exit 1\n          fi\n          {\n            echo \"### Release signing\"\n            echo '```'\n            echo \"$CERTS\" | grep -E \"DN:|SHA-256\"\n            echo '```'\n          } >> \"$GITHUB_STEP_SUMMARY\"\n\n      - name: Remove decoded keystore\n        if: always()\n        run: rm -f \"$RUNNER_TEMP/release.jks\"\n\n      - uses: actions/upload-artifact@v4\n        with:\n          name: memory-diary-apk\n          path: app/build/app/outputs/flutter-apk/app-release.apk\n          retention-days: 14\n\n      - name: Attach APK to release\n        if: startsWith(github.ref, 'refs/tags/v')\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          gh release create \"${{ github.ref_name }}\" \\\n            --title \"${{ github.ref_name }}\" \\\n            --generate-notes \\\n            app/build/app/outputs/flutter-apk/app-release.apk\nEOF
