@@ -50,8 +50,8 @@ jobs:
       - name: Ensure INTERNET permission is in the release manifest
         working-directory: app
         run: |
-          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \\
-            sed -i '/<application/i\\    <uses-permission android:name=\\"android.permission.INTERNET\\"/>' \\
+          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
+            sed -i '/<application/i\\    <uses-permission android:name="android.permission.INTERNET"/>' \
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
 
@@ -79,11 +79,9 @@ jobs:
               echo "use the same one. Create it once and keep it safe -- a lost key means users"
               echo "can never update the app again:"
               echo ""
-              echo "    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\"
-              echo "      -keyalg RSA -keysize 4096 -validity 10000"
-              echo "    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64"
-              echo ""
-              echo "Then add the four secrets to the repository (Settings → Secrets → Actions)."
+              echo '    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\'
+              echo '      -keyalg RSA -keysize 4096 -validity 10000'
+              echo '    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64'
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -101,38 +99,7 @@ jobs:
         run: |
           GRADLE_FILE="android/app/build.gradle.kts"
           [ -f "$GRADLE_FILE" ] || { echo "::error::$GRADLE_FILE not found"; exit 1; }
-
-          # Read the file
-          CONTENT=$(cat "$GRADLE_FILE")
-
-          # Build the signingConfigs block
-          SIGNING_CONFIG='\n    signingConfigs {\n        create("release") {\n            storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")\n            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")\n            keyAlias = System.getenv("ANDROID_KEY_ALIAS")\n            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")\n        }\n    }'
-
-          # Insert signingConfigs block after android { line if not already present
-          if ! echo "$CONTENT" | grep -q '^[[:space:]]*signingConfigs {'; then
-            # Write signingConfigs block to a temp file and use sed r command for reliable insertion
-            printf '%s' "$SIGNING_CONFIG" > "/tmp/signing_config.tmp"
-            CONTENT=$(echo "$CONTENT" | sed -e '/^[[:space:]]*android {/r /tmp/signing_config.tmp')
-            rm -f "/tmp/signing_config.tmp"
-          fi
-
-          # Ensure release buildType uses the signing config
-          # Replace any signingConfig line in the release buildType with our release signing config
-          CONTENT=$(echo "$CONTENT" | sed -e 's/signingConfig = signingConfigs\.getByName("debug")/signingConfig = signingConfigs.getByName("release")/g')
-
-          echo "$CONTENT" > "$GRADLE_FILE"
-          echo "=== Patched $GRADLE_FILE (signingConfigs and release buildType) ==="
-          grep -A 6 "signingConfigs" "$GRADLE_FILE" || true
-          grep -A 4 "buildTypes {" "$GRADLE_FILE" | head -10 || true
-          # Verify the patch was applied correctly
-          if ! grep -q 'create("release")' "$GRADLE_FILE"; then
-            echo "::error::Failed to insert signingConfigs block"
-            exit 1
-          fi
-          if ! grep -q 'getByName("release")' "$GRADLE_FILE"; then
-            echo "::error::Failed to set release buildType to use release signing config"
-            exit 1
-          fi
+          python3 ./tool/patch_gradle_for_signing.py "$GRADLE_FILE"
 
       - name: Decode signing keystore
         env:
@@ -166,18 +133,14 @@ jobs:
         working-directory: app
         run: |
           APK="build/app/outputs/flutter-apk/app-release.apk"
+          [ -n "$APK" ] || { echo "::error::No release APK was produced"; exit 1; }
           [ -f "$APK" ] || { echo "::error::Expected APK not found: $APK"; exit 1; }
           # Use apksigner from Android SDK (ANDROID_HOME should be set by flutter-action)
           if [ -z "$ANDROID_HOME" ]; then
             echo "::error::ANDROID_HOME not set"
             exit 1
           fi
-          # Find the latest build-tools version
-          if [ ! -d "$ANDROID_HOME/build-tools" ]; then
-            echo "::error::$ANDROID_HOME/build-tools not found"
-            exit 1
-          fi
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           if [ ! -f "$APKSIGNER" ]; then
             # Try to find apksigner in PATH as fallback
             APKSIGNER=$(command -v apksigner)
