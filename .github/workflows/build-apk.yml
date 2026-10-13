@@ -51,9 +51,10 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \\
-            sed -i '/<application/i\\    <uses-permission android:name=\"android.permission.INTERNET\"/>' \\
+            sed -i '/<application[^>]*>/i\\    <uses-permission android:name=\"android.permission.INTERNET\"/>' \\
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
       - name: Require release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
