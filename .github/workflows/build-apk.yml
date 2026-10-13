@@ -9,8 +9,7 @@ on:
       - ".github/workflows/build-apk.yml"
   pull_request:
     branches: [development]
-    paths:
-      - "app/**"
+    paths: ["app/**"]
 
 permissions:
   contents: write # needed for `gh release create` on a tag push
@@ -26,8 +25,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # subosito/flutter-action v2 @ 1a449444c387b1966244ae4d4f8c696479add0b2 (resolved 2026-10-12)
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
@@ -51,9 +49,30 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i -e '/<application>/i\\' -e '    <uses-permission android:name=\"android.permission.INTERNET\"/>' \
+            sed -i '/<application/i\\    <uses-permission android:name="android.permission.INTERNET"/>' \
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
+
+      # Patch the generated build.gradle.kts to use release signing when the
+      # keystore secrets are present. The flutter create step regenerates this file
+      # fresh every build, so we patch it in-place here.
+      - name: Patch build.gradle.kts for release signing
+        working-directory: app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 ./app/tool/patch_gradle_for_signing.py android/app/build.gradle.kts
+
+      - name: Install dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
 
       # First, so a missing secret fails in seconds rather than after a ten-minute
       # build, and before anything is versioned, committed or released.
@@ -79,53 +98,24 @@ jobs:
               echo "use the same one. Create it once and keep it safe -- a lost key means users"
               echo "can never update the app again:"
               echo ""
-              echo "    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\"
-              echo "      -keyalg RSA -keysize 4096 -validity 10000"
-              echo "    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64"
+              echo '    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\'
+              echo '      -keyalg RSA -keysize 4096 -validity 10000'
+              echo '    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64'
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
-      # Patch the generated build.gradle.kts to use release signing when the
-      # keystore secrets are present. The flutter create step regenerates this file
-      # fresh every build, so we patch it in-place here.
-      - name: Patch build.gradle.kts for release signing
-        working-directory: app
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          GRADLE_FILE="android/app/build.gradle.kts"
-          [ -f "$GRADLE_FILE" ] || { echo "::error::$GRADLE_FILE not found"; exit 1; }
-          python3 ./tool/patch_gradle_for_signing.py "$GRADLE_FILE"
-
-      - name: Decode signing keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          [ -s "$RUNNER_TEMP/release.jks" ] || { echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a keystore"; exit 1; }
-
-      - name: Install dependencies
-        working-directory: app
-        run: flutter pub get
-
-      - name: Analyze
-        working-directory: app
-        run: flutter analyze
-
       - name: Build release APK
         working-directory: app
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         # WORKER_BASE_URL is a repository *variable*, not a secret — it's the Worker's
         # public HTTPS URL, safe to compile into a public APK.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.WORKER_BASE_URL }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memory-diary-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
 
       # "Signed" is not the question: the debug-signed APKs were signed too. The
       # question is by whom, so this fails on the debug certificate specifically.
@@ -166,18 +156,12 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: memory-diary-apk
-          path: app/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
       - name: Attach APK to release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \\
-            --title "${{ github.ref_name }}" \\
-            --generate-notes \\
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
             app/build/app/outputs/flutter-apk/app-release.apk
