@@ -108,26 +108,21 @@ jobs:
           # Build the signingConfigs block
           SIGNING_CONFIG='\n    signingConfigs {\n        create("release") {\n            storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")\n            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")\n            keyAlias = System.getenv("ANDROID_KEY_ALIAS")\n            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")\n        }\n    }'
 
-          # Check if signingConfigs already exists
-          if echo "$CONTENT" | grep -q "signingConfigs"; then
-            # Replace existing signingConfigs block (assuming no nested braces inside)
-            CONTENT=$(echo "$CONTENT" | sed -e '/signingConfigs {/,/^[[:space:]]*}/c\\'"$SIGNING_CONFIG")
-          else
-            # Insert after the android { line
-            CONTENT=$(echo "$CONTENT" | sed -e '/^android {/a\\'"$SIGNING_CONFIG")
+          # Insert signingConfigs block after android { line if not already present
+          if ! echo "$CONTENT" | grep -q '^[[:space:]]*signingConfigs {'; then
+            CONTENT=$(echo "$CONTENT" | sed -e '/^[[:space:]]*android {/a\\'"$SIGNING_CONFIG"')
           fi
 
-          # Ensure the release buildType uses the signing config
-          if ! echo "$CONTENT" | grep -q 'signingConfig = signingConfigs.getByName("release")'; then
-            # Insert after buildTypes { line
-            CONTENT=$(echo "$CONTENT" | sed -e '/^buildTypes {/a\\        release {\\n            signingConfig = signingConfigs.getByName("release")\\n        }')
+          # Ensure release buildType uses the signing config
+          if ! echo "$CONTENT" | grep -q '^[[:space:]]*signingConfig = signingConfigs.getByName("release")'; then
+            # Insert after the line containing release { inside buildTypes
+            CONTENT=$(echo "$CONTENT" | sed -e '/^[[:space:]]*release {/a\\            signingConfig = signingConfigs.getByName("release")')
           fi
 
           echo "$CONTENT" > "$GRADLE_FILE"
           echo "=== Patched $GRADLE_FILE (signingConfigs and release buildType) ==="
           grep -A 6 "signingConfigs" "$GRADLE_FILE" || true
           grep -A 4 "buildTypes {" "$GRADLE_FILE" | head -5 || true
-
       - name: Decode signing keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
