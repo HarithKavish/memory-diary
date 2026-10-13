@@ -31,11 +31,11 @@ def patch_gradle_file(gradle_file_path):
 
     signing_configs_block = '''    signingConfigs {
         release {
-            if (System.getenv("ANDROID_KEYSTORE_BASE64")) {
-                storeFile file(System.getenv("RUNNER_TEMP") + "/release.jks")
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
+                storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
             }
         }
     }
@@ -76,10 +76,10 @@ def patch_gradle_file(gradle_file_path):
     end_pos = content.find('\n', end_pos) + 1
 
     new_release_block = '''        release {
-            if (System.getenv("ANDROID_KEYSTORE_BASE64")) {
-                signingConfig signingConfigs.release
+            if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
+                signingConfig = signingConfigs.release
             } else {
-                signingConfig signingConfigs.debug
+                signingConfig = signingConfigs.debug
             }
         }
 '''
