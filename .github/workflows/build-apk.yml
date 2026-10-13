@@ -51,7 +51,7 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i '/<application/i\\    <uses-permission android:name="android.permission.INTERNET"/>' \
+            sed -i -e '/<application>/i\\' -e '    <uses-permission android:name=\"android.permission.INTERNET\"/>' \
               android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
 
@@ -79,9 +79,9 @@ jobs:
               echo "use the same one. Create it once and keep it safe -- a lost key means users"
               echo "can never update the app again:"
               echo ""
-              echo '    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\'
-              echo '      -keyalg RSA -keysize 4096 -validity 10000'
-              echo '    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64'
+              echo "    keytool -genkeypair -v -keystore memory-diary-release.jks -alias memory-diary \\"
+              echo "      -keyalg RSA -keysize 4096 -validity 10000"
+              echo "    base64 -w0 memory-diary-release.jks   # -> ANDROID_KEYSTORE_BASE64"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -177,7 +177,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --generate-notes \
+          gh release create "${{ github.ref_name }}" \\
+            --title "${{ github.ref_name }}" \\
+            --generate-notes \\
             app/build/app/outputs/flutter-apk/app-release.apk
