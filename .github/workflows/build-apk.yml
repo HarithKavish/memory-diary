@@ -50,8 +50,8 @@ jobs:
         working-directory: app
         run: |
           grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET"/>' \
-              android/app/src/main/AndroidManifest.xml
+            sed -i '/<application/i\\    <uses-permission android:name="android.permission.INTERNET"/' \\
+\\\n              android/app/src/main/AndroidManifest.xml
           grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
 
       - name: Install dependencies
@@ -67,6 +67,41 @@ jobs:
         # WORKER_BASE_URL is a repository *variable*, not a secret — it's the Worker's
         # public HTTPS URL, safe to compile into a public APK.
         run: flutter build apk --release --dart-define=API_BASE_URL=${{ vars.WORKER_BASE_URL }}
+      - name: Refuse a debug-signed APK
+        working-directory: app
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          [ -f "$APK" ] || { echo "::error::Expected APK not found: $APK"; exit 1; }
+          # Use apksigner from Android SDK (ANDROID_HOME should be set by flutter-action)
+          if [ -z "$ANDROID_HOME" ]; then
+            echo "::error::ANDROID_HOME not set"
+            exit 1
+          fi
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          if [ ! -f "$APKSIGNER" ]; then
+            # Try to find apksigner in PATH as fallback
+            # Try to find apksigner in PATH as fallback
+            APKSIGNER=$(ls "$ANDROID_HOME/build-tools"/*/apksigner 2>/dev/null | sort -V | tail -1)
+            if [ -z "$APKSIGNER" ]; then
+              if [ -z "$APKSIGNER" ]; then
+                echo "::error::apksigner not found in ANDROID_HOME or PATH"
+                exit 1
+              fi
+            fi
+          fi
+          CERTS=$("$APKSIGNER" verify --print-certs "$APK")
+          echo "$CERTS"
+          if echo "$CERTS" | grep -q "CN=Android Debug"; then
+            echo "::error::$APK is signed with the Android debug key -- refusing to release it"
+            exit 1
+          fi
+          {
+            echo "### Release signing"
+            echo "```"
+            echo "$CERTS" | grep -E "DN:|SHA-256"
+            echo "```"
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
       - uses: actions/upload-artifact@v4
         with:
