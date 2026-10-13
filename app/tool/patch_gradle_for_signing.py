@@ -30,7 +30,7 @@ def patch_gradle_file(gradle_file_path):
     insert_pos = content.find('\n', android_pos) + 1
 
     signing_configs_block = '''    signingConfigs {
-        release {
+        create("release") {
             if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
                 storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")
                 storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -77,9 +77,9 @@ def patch_gradle_file(gradle_file_path):
 
     new_release_block = '''        release {
             if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
-                signingConfig = signingConfigs.release
+                signingConfig = signingConfigs.getByName("release")
             } else {
-                signingConfig = signingConfigs.debug
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
 '''
