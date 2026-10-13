@@ -2,7 +2,6 @@
 import sys
 import os
 
-
 def patch_gradle_file(gradle_file_path):
     """Patch the build.gradle.kts file to add release signing config."""
     if not os.path.exists(gradle_file_path):
@@ -30,7 +29,7 @@ def patch_gradle_file(gradle_file_path):
     insert_pos = content.find('\n', android_pos) + 1
 
     signing_configs_block = '''    signingConfigs {
-        release {
+        create("release") {
             if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
                 storeFile = file(System.getenv("RUNNER_TEMP") + "/release.jks")
                 storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
@@ -77,7 +76,7 @@ def patch_gradle_file(gradle_file_path):
 
     new_release_block = '''        release {
             if (System.getenv("ANDROID_KEYSTORE_BASE64") != null) {
-                signingConfig = signingConfigs.release
+                signingConfig = signingConfigs.getByName("release")
             } else {
                 signingConfig = signingConfigs.debug
             }
@@ -90,8 +89,12 @@ def patch_gradle_file(gradle_file_path):
     with open(gradle_file_path, 'w') as f:
         f.write(content)
 
-    print("Patch applied successfully")
+    # Verification: ensure create("release") and getByName("release") are present
+    if 'create("release")' not in content or 'signingConfigs.getByName("release")' not in content:
+        print("::error::Patch verification failed: expected create(\"release\") and signingConfigs.getByName(\"release\") not found")
+        sys.exit(1)
 
+    print("Patch applied successfully")
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
