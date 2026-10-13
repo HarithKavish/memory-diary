@@ -99,7 +99,9 @@ jobs:
         run: |
           GRADLE_FILE="android/app/build.gradle.kts"
           [ -f "$GRADLE_FILE" ] || { echo "::error::$GRADLE_FILE not found"; exit 1; }
-          python3 ./tool/patch_gradle_for_signing.py "$GRADLE_FILE"
+          # No argument: the script's fixed GRADLE_FILE constant matches this
+          # path by design (Sonar pythonsecurity:S8707 — no CLI-supplied path).
+          python3 ./tool/patch_gradle_for_signing.py
 
       - name: Decode signing keystore
         env:

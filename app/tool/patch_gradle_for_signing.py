@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
-import sys
+"""Patch the flutter-generated build.gradle.kts to add release signing config.
+
+Called by .github/workflows/build-apk.yml from the app/ directory, where the
+generated Gradle file is always at android/app/build.gradle.kts — the path is
+fixed by the workflow, never taken from the command line, so a tainted or
+mistyped argument cannot redirect the patch at an arbitrary file (Sonar
+pythonsecurity:S8707).
+"""
 import os
+import sys
+
+# Fixed by the calling workflow (working-directory: app): the file that
+# `flutter create --platforms=android` regenerates on every build.
+GRADLE_FILE = os.path.join("android", "app", "build.gradle.kts")
 
 
 def patch_gradle_file(gradle_file_path):
@@ -94,14 +106,15 @@ def patch_gradle_file(gradle_file_path):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("Usage: python3 patch_gradle.py <path-to-build.gradle.kts>")
+    if len(sys.argv) != 1:
+        print(f"Usage: python3 {sys.argv[0]}")
+        print("The Gradle file path is fixed by the calling workflow; arguments are not accepted.")
         sys.exit(1)
 
     # Check if we have the keystore environment variables set (the four secrets)
     required_env = ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]
     if all(os.environ.get(var) for var in required_env):
         print("Patch: All signing secrets are set, configuring release signingConfig")
-        patch_gradle_file(sys.argv[1])
+        patch_gradle_file(GRADLE_FILE)
     else:
         print("Patch: Not all signing secrets are set, leaving debug signingConfig (for local development)")
