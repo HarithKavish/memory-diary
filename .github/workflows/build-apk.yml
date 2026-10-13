@@ -26,11 +26,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Pinned to the commit SHA of the subosito/flutter-action v2 tag
-      # (1a449444c387b1966244ae4d4f8c696479add0b2), resolved via
-      # GitHub API (e.g., `gh api repos/subosito/flutter-action/git/ref/tags/v2` or
-      # `curl -s https://api.github.com/repos/subosito/flutter-action/git/ref/tags/v2`) on
-      # 2026-10-12. NEVER pin a SHA you have not resolved (SonarCloud S7637).
+      # subosito/flutter-action v2 @ 1a449444c387b1966244ae4d4f8c696479add0b2 (resolved 2026-10-12)
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           channel: stable
