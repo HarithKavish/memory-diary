@@ -48,10 +48,7 @@ jobs:
       - name: Ensure INTERNET permission is in the release manifest
         working-directory: app
         run: |
-          grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml || \
-            sed -i '/<application[^>]*>/i\\\\    <uses-permission android:name=\"android.permission.INTERNET\"/>\' \\\n              android/app/src/main/AndroidManifest.xml
-          grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml
-
+                    if ! grep -q 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml; then\n                      sed -i '/<application[^>]*>/i\\    <uses-permission android:name=\"android.permission.INTERNET\"/>\' android/app/src/main/AndroidManifest.xml\n                    fi\n                    grep 'android.permission.INTERNET' android/app/src/main/AndroidManifest.xml\n
       # First, so a missing secret fails in seconds rather than after a ten-minute
       # build, and before anything is versioned, committed or released.
       - name: Require release signing
