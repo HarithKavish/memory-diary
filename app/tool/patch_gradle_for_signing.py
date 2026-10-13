@@ -2,7 +2,6 @@
 import sys
 import os
 
-
 def patch_gradle_file(gradle_file_path):
     """Patch the build.gradle.kts file to add release signing config."""
     if not os.path.exists(gradle_file_path):
@@ -90,8 +89,12 @@ def patch_gradle_file(gradle_file_path):
     with open(gradle_file_path, 'w') as f:
         f.write(content)
 
-    print("Patch applied successfully")
+    # Verification: ensure create("release") and getByName("release") are present
+    if 'create("release")' not in content or 'signingConfigs.getByName("release")' not in content:
+        print("::error::Patch verification failed: expected create(\"release\") and signingConfigs.getByName(\"release\") not found")
+        sys.exit(1)
 
+    print("Patch applied successfully")
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
