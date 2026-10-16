@@ -1,6 +1,7 @@
 import type { Env } from "./types";
 import { checkPassphrase, issueSessionToken, requireAuth } from "./auth";
 import { deleteFact, downloadImage, insertFact, listRecent, searchSimilar, updateFact, uploadImage } from "./db";
+import { resolveWriteTenant } from "./types";
 import { embedText } from "./embed";
 import { extractFact, structureCaption } from "./llm";
 import { focusQuery, mergeByBestScore } from "./query";
@@ -101,8 +102,9 @@ export default {
           return json({ action: "update", id: decision.matchId, updated, fact: decision.fact });
         }
 
-        const id = await insertFact(env, decision.fact, factVector);
-        return json({ action: "create", id, fact: decision.fact });
+        const tenant = resolveWriteTenant(decision.fact.section, decision.fact.person);
+        const id = await insertFact(env, decision.fact, factVector, undefined, tenant);
+        return json({ action: "create", id, section: tenant, fact: decision.fact });
       }
 
       if (pathname === "/images" && request.method === "POST") {
