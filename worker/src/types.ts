@@ -26,7 +26,7 @@ export const TENANT_ID = "harith";
  *  - "$~jarvis": facts about the Jarvis agent itself - its identity, architecture
  *    and operating doctrine. Each agent owns a "$~<agent>" section for its own
  *    self-knowledge; a future system adds one without migrating anything.
- *  - WORKSPACE_TENANT_ID ("workspace"): the projects, the infrastructure they run
+ *  - WORLD_TENANT_ID ("world"): the projects, the infrastructure they run
  *    on, the tooling. About neither the owner nor any one agent. Shared and
  *    system-agnostic, deliberately not "$~"-prefixed because it belongs to no
  *    single agent.
@@ -38,7 +38,7 @@ export const TENANT_ID = "harith";
  * Deliberately a fixed allowlist, not "all tenants": talk.memories also holds other
  * my_chatgpt users' private data, which must never be readable from here.
  */
-export const WORKSPACE_TENANT_ID = "workspace";
+export const WORLD_TENANT_ID = "world";
 
 /** People Harith knows get one section each: "@" + a slug of their name, the way "$~"
  * marks an agent's own section. A fact about a person belongs to that person - "Kevin is
@@ -65,20 +65,27 @@ export function personTenant(name: string): string {
 export function isWritableTenant(tenant: string): boolean {
   return (
     tenant === TENANT_ID ||
-    tenant === WORKSPACE_TENANT_ID ||
+    tenant === WORLD_TENANT_ID ||
     tenant.startsWith(PERSON_PREFIX)
   );
 }
 
-/** Resolve the classifier's chosen section to the tenant that owns it. */
+/** Resolve the classifier's chosen section to the tenant that owns it.
+ * Never throws: LLM output is unreliable, and losing a fact is worse than
+ * filing it under the owner's section. */
 export function resolveWriteTenant(section?: string, person?: string): string {
   switch ((section ?? "").toLowerCase()) {
     case "workspace":
-    case "world": // earlier name for the same section
-      return WORKSPACE_TENANT_ID;
-    case "person":
-      if (!person) throw new Error("section 'person' requires a person name");
-      return personTenant(person);
+    case "world":
+      return WORLD_TENANT_ID;
+    case "person": {
+      if (!person) return TENANT_ID;
+      try {
+        return personTenant(person);
+      } catch {
+        return TENANT_ID;
+      }
+    }
     default:
       return TENANT_ID;
   }
@@ -87,7 +94,7 @@ export function resolveWriteTenant(section?: string, person?: string): string {
 export const READ_TENANT_IDS = [
   TENANT_ID,
   "$~jarvis",
-  WORKSPACE_TENANT_ID,
+  WORLD_TENANT_ID,
   "69ad9e8a3c88f37edc71a50f",
 ];
 

@@ -98,7 +98,8 @@ export default {
 
         if (decision.action === "update") {
           if (!decision.matchId) return json({ error: "update decided with no matchId" }, 422);
-          const updated = await updateFact(env, decision.matchId, decision.fact, factVector);
+          const tenant = resolveWriteTenant(decision.fact.section, decision.fact.person);
+          const updated = await updateFact(env, decision.matchId, decision.fact, factVector, tenant);
           return json({ action: "update", id: decision.matchId, updated, fact: decision.fact });
         }
 

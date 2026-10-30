@@ -10,13 +10,9 @@ import { isWritableTenant, PERSON_PREFIX, READ_TENANT_IDS, TENANT_ID } from "./t
  * my_chatgpt users' private tenants stay unreadable from here. */
 async function readTenants(env: Env): Promise<string[]> {
   const col = await getCollection(env);
-  try {
-    const all = (await col.distinct("userId")) as unknown as string[];
-    const people = all.filter((t) => typeof t === "string" && t.startsWith(PERSON_PREFIX));
-    return [...new Set([...READ_TENANT_IDS, ...people])];
-  } catch {
-    return [...READ_TENANT_IDS];
-  }
+  const all = (await col.distinct("userId")) as unknown as string[];
+  const people = all.filter((t) => typeof t === "string" && t.startsWith(PERSON_PREFIX));
+  return [...new Set([...READ_TENANT_IDS, ...people])];
 }
 
 /** Separate GridFS bucket (backed by `images.files`/`images.chunks` collections) in the
@@ -198,7 +194,8 @@ export async function updateFact(
   env: Env,
   id: string,
   fact: { topic: string; summary: string; tags: string[]; domain: string },
-  embedding: number[]
+  embedding: number[],
+  tenant?: string
 ): Promise<boolean> {
   const col = await getCollection(env);
   const result = await col.updateOne(
@@ -211,6 +208,7 @@ export async function updateFact(
         domain: fact.domain,
         embedding,
         updatedAt: new Date().toISOString(),
+        ...(tenant ? { userId: tenant } : {}),
       },
     }
   );

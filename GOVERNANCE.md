@@ -31,5 +31,8 @@ Agents: read [AGENTS.md](AGENTS.md) first, then follow
 - This repository writes into `talk.memories`, a MongoDB Atlas collection owned and
   primarily used by `my_chatgpt` (shared because Atlas M0 caps search indexes at 3,
   already exhausted by `my_chatgpt`). `memory-diary` uses its own tenant (`userId: "harith"`)
-  within that collection and touches no other tenant's documents. See `worker/README.md`.
+  within that collection, and also writes to the shared `world` section and to
+  dynamically-created `@<person>` sections (one per person Harith knows). Reads span the
+  fixed allowlist (`harith`, `$~jarvis`, `world`, owner's `my_chatgpt` account) plus any
+  discovered person sections. See `worker/README.md`.
 - No social preview image has been created yet for this repository. To be added.
